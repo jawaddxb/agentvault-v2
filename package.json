@@ -1,5 +1,5 @@
 {
-  "name": "agentvault",
+  "name": "agent-vault",
   "version": "1.0.0",
   "description": "Encrypted agent credential and memory vault with MCP server",
   "type": "module",
@@ -30,6 +30,12 @@
     "encryption"
   ],
   "license": "MIT",
+  "author": "Jawad <jawad@ala.xyz>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jawaddxb/agentvault-v2.git"
+  },
+  "homepage": "https://github.com/jawaddxb/agentvault-v2#readme",
   "engines": {
     "node": ">=20"
   },
