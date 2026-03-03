@@ -64,8 +64,9 @@ export function initCommand(): Command {
         return;
       }
 
-      fs.mkdirSync(paths.profiles, { recursive: true });
-      fs.writeFileSync(`${paths.base}/.gitignore`, '*\n!.gitignore\n');
+      fs.mkdirSync(paths.profiles, { recursive: true, mode: 0o700 });
+      fs.chmodSync(paths.base, 0o700);
+      fs.writeFileSync(`${paths.base}/.gitignore`, '*\n!.gitignore\n', { mode: 0o600 });
 
       for (const profile of DEFAULT_PROFILES) {
         saveProfile(dir, profile);
