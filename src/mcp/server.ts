@@ -36,13 +36,30 @@ interface McpServerOptions {
   rateLimit?: number;
 }
 
-/** Rate limiter state */
+/** Rate limiter state — initialized fresh, may be inherited from previous session */
 let budget: McpBudget = {
   pid: process.pid,
   callsThisMinute: 0,
   minuteStart: Date.now(),
   totalCalls: 0,
 };
+
+/** Try to inherit budget from a recently-crashed previous session */
+function tryInheritBudget(projectDir: string): void {
+  const budgetPath = resolvePaths(projectDir).mcpBudget;
+  try {
+    if (!fs.existsSync(budgetPath)) return;
+    const prev = JSON.parse(fs.readFileSync(budgetPath, 'utf-8')) as McpBudget;
+    const ageMs = Date.now() - prev.minuteStart;
+    // Only inherit if previous session was <5min ago (likely crash recovery)
+    if (ageMs < 5 * 60 * 1000 && prev.pid !== process.pid) {
+      budget.totalCalls = prev.totalCalls;
+      console.error(`Inherited budget from previous session (PID ${prev.pid}): ${prev.totalCalls} total calls`);
+    }
+  } catch {
+    // Best-effort
+  }
+}
 
 let configuredRateLimit = MCP_RATE_LIMIT;
 
@@ -311,6 +328,7 @@ async function handleTool(
 export async function startMcpServer(options: McpServerOptions): Promise<void> {
   const { projectDir } = options;
   configuredRateLimit = options.rateLimit ?? MCP_RATE_LIMIT;
+  tryInheritBudget(projectDir);
 
   const server = new Server(
     { name: 'agentvault', version: '1.0.0' },
