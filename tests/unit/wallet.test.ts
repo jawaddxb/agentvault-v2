@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createWallet, getWalletAddress, getSignerWallet, signMessage, verifySignature } from '../../src/wallet/wallet.js';
+import { _clearPassphraseCache } from '../../src/vault/encryption.js';
 
 describe('Wallet', () => {
   let tmpDir: string;
@@ -14,6 +15,7 @@ describe('Wallet', () => {
   });
 
   afterEach(() => {
+    _clearPassphraseCache();
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete process.env.AGENTVAULT_PASSPHRASE;
   });
@@ -75,6 +77,7 @@ describe('Wallet', () => {
   it('should fail to load wallet without passphrase', () => {
     createWallet(tmpDir);
     delete process.env.AGENTVAULT_PASSPHRASE;
+    _clearPassphraseCache();
     expect(() => getWalletAddress(tmpDir)).toThrow('passphrase');
   });
 });

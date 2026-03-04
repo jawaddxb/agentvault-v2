@@ -17,16 +17,33 @@ function deriveKey(passphrase: string, salt: Buffer): Buffer {
   });
 }
 
-/** Resolve passphrase: env var > .passphrase file > throw */
+/** In-memory passphrase cache — avoids re-reading .passphrase file */
+let cachedPassphrase: string | null = null;
+
+/** Clear passphrase cache (for testing only) */
+export function _clearPassphraseCache(): void {
+  cachedPassphrase = null;
+}
+
+/** Resolve passphrase: cache > env var > .passphrase file > throw
+ *  SECURITY: .passphrase file is read once and cached in memory.
+ *  This minimizes the window where the file must exist on disk. */
 export function getPassphrase(projectDir?: string): string {
+  if (cachedPassphrase) return cachedPassphrase;
+
   const envVal = process.env[PASSPHRASE_ENV];
-  if (envVal) return envVal;
+  if (envVal) {
+    cachedPassphrase = envVal;
+    return envVal;
+  }
 
   if (projectDir) {
     const ppFile = resolvePaths(projectDir).passphrase;
     try {
       if (fs.existsSync(ppFile)) {
-        return fs.readFileSync(ppFile, 'utf-8').trim();
+        const pp = fs.readFileSync(ppFile, 'utf-8').trim();
+        cachedPassphrase = pp;
+        return pp;
       }
     } catch {
       // fall through

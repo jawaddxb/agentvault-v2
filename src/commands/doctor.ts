@@ -74,6 +74,13 @@ export function doctorCommand(): Command {
           console.log('  [FAIL] Passphrase too short (< 8 characters)');
           issues++;
         }
+        // CRIT-2: Warn about .passphrase file when agents may run
+        if (fs.existsSync(paths.auditDb)) {
+          console.log('  [WARN] .passphrase file on disk + agents have been run');
+          console.log('         Sandboxed agents can read this file. Consider using');
+          console.log('         AGENTVAULT_PASSPHRASE env var instead and deleting .passphrase');
+          issues++;
+        }
       } else if (process.env.AGENTVAULT_PASSPHRASE) {
         console.log('  [OK] Passphrase set via environment variable');
       } else {

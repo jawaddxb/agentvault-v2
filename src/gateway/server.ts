@@ -43,6 +43,15 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
   const { projectDir, port } = options;
   const app = new Hono();
 
+  // HIGH-3 fix: body size limit (64KB)
+  app.use('*', async (c, next) => {
+    const contentLength = c.req.header('content-length');
+    if (contentLength && parseInt(contentLength) > 65536) {
+      return c.json({ error: 'Request body too large (max 64KB)' }, 413);
+    }
+    await next();
+  });
+
   // Health endpoint
   app.get('/health', (c) => {
     let walletAddress = 'not configured';

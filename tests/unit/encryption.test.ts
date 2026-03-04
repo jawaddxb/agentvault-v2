@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { encrypt, decrypt, getPassphrase, readEncryptedFile, writeEncryptedFile } from '../../src/vault/encryption.js';
+import { encrypt, decrypt, getPassphrase, readEncryptedFile, writeEncryptedFile, _clearPassphraseCache } from '../../src/vault/encryption.js';
 
 describe('encryption', () => {
   const passphrase = 'test-passphrase-12345';
@@ -85,6 +85,7 @@ describe('encryption', () => {
     const originalEnv = process.env.AGENTVAULT_PASSPHRASE;
 
     afterEach(() => {
+      _clearPassphraseCache();
       if (originalEnv !== undefined) {
         process.env.AGENTVAULT_PASSPHRASE = originalEnv;
       } else {
