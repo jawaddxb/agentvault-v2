@@ -10,16 +10,34 @@ export function memoryCommand(): Command {
   cmd.command('store <key> <content>')
     .description('Store a memory entry')
     .option('-t, --type <type>', 'Memory type: knowledge|query_cache|operational', 'knowledge')
-    .option('--tags <tags...>', 'Tags for categorization')
+    .option('--tags <tags...>', 'Tags for categorization (space-separated or comma-separated)')
     .option('-c, --confidence <n>', 'Confidence score 0-1', '0.8')
     .option('-s, --source <source>', 'Source identifier')
     .option('--ttl <seconds>', 'Time-to-live in seconds')
+    .option('--overwrite', 'Overwrite existing entry with same key without prompting')
     .action(async (key: string, content: string, opts) => {
-      const entry = await storeMemory(process.cwd(), {
+      const dir = process.cwd();
+
+      // BUG-3 fix: auto-split comma-separated tags
+      let tags: string[] | undefined = opts.tags;
+      if (tags) {
+        tags = tags.flatMap((t: string) => t.split(',').map((s: string) => s.trim())).filter((t: string) => t.length > 0);
+      }
+
+      // BUG-1 fix: warn on duplicate key overwrite
+      if (!opts.overwrite) {
+        const { loadMemories } = await import('../memory/memory.js');
+        const existing = loadMemories(dir);
+        if (existing.some((e: { key: string }) => e.key === key)) {
+          console.warn(`Warning: Key "${key}" already exists. Overwriting. Use --overwrite to suppress this warning.`);
+        }
+      }
+
+      const entry = await storeMemory(dir, {
         key,
         content,
         memoryType: opts.type as MemoryType,
-        tags: opts.tags,
+        tags,
         confidence: parseFloat(opts.confidence),
         source: opts.source,
         ttlSeconds: opts.ttl ? parseInt(opts.ttl) : undefined,
@@ -92,17 +110,23 @@ export function memoryCommand(): Command {
     .description('List memory entries')
     .option('--tag <tag>', 'Filter by tag')
     .option('-t, --type <type>', 'Filter by memory type')
+    .option('-n, --limit <n>', 'Max entries to show (default 100, use 0 for all)', '100')
     .action(async (opts) => {
-      const entries = await listMemories(process.cwd(), {
+      const all = await listMemories(process.cwd(), {
         tag: opts.tag,
         memoryType: opts.type as MemoryType | undefined,
       });
-      if (!entries.length) { console.log('No memories stored.'); return; }
+      if (!all.length) { console.log('No memories stored.'); return; }
+      const maxShow = parseInt(opts.limit);
+      const entries = maxShow === 0 ? all : all.slice(0, maxShow);
       for (const e of entries) {
         const tags = e.tags.length ? ` [${e.tags.join(', ')}]` : '';
         console.log(`  ${e.key} (${e.memoryType})${tags} -- ${e.contentLength} chars, accessed ${e.accessCount}x`);
       }
-      console.log(`\n${entries.length} entries`);
+      if (maxShow > 0 && all.length > maxShow) {
+        console.log(`\n  ... and ${all.length - maxShow} more (use --limit 0 to show all)`);
+      }
+      console.log(`\n${all.length} entries total`);
     });
 
   cmd.command('remove <key>')
