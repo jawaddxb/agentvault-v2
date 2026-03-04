@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories } from '../../src/memory/memory.js';
+import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories, loadMemories } from '../../src/memory/memory.js';
 
 describe('memory', () => {
   let tmpDir: string;
@@ -154,3 +154,136 @@ describe('memory', () => {
     expect(entries[0].accessCount).toBe(1);
   });
 });
+
+describe('duplicate key behavior', () => {
+  let tmpDir: string;
+  const originalEnv = process.env.AGENTVAULT_PASSPHRASE;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'av-mem-test-dup-key-'));
+    fs.mkdirSync(path.join(tmpDir, '.agentvault'), { recursive: true });
+    process.env.AGENTVAULT_PASSPHRASE = 'test-memory-passphrase';
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (originalEnv !== undefined) {
+      process.env.AGENTVAULT_PASSPHRASE = originalEnv;
+    } else {
+      delete process.env.AGENTVAULT_PASSPHRASE;
+    }
+  });
+
+  it('should overwrite existing entry and preserve accessCount reset', async () => {
+    await storeMemory(tmpDir, { key: 'dup-key', content: 'original', memoryType: 'knowledge' });
+    await queryMemories(tmpDir, 'original'); // Increment access count
+
+    let entries = loadMemories(tmpDir);
+    expect(entries[0].accessCount).toBe(1);
+    expect(entries[0].content).toBe('original');
+
+    await storeMemory(tmpDir, { key: 'dup-key', content: 'new content', memoryType: 'knowledge' });
+
+    entries = loadMemories(tmpDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('dup-key');
+    expect(entries[0].content).toBe('new content');
+    expect(entries[0].accessCount).toBe(0); // Access count should reset on overwrite
+  });
+
+  it('should update content but generate fresh keywords on overwrite', async () => {
+    await storeMemory(tmpDir, { key: 'key-with-tags', content: 'Initial content about alpha and beta', memoryType: 'knowledge', tags: ['alpha', 'beta'] });
+
+    let entries = loadMemories(tmpDir);
+    expect(entries[0].keywords).toEqual(expect.arrayContaining(['alpha', 'beta', 'initial', 'content']));
+
+    await storeMemory(tmpDir, { key: 'key-with-tags', content: 'Updated content about gamma and delta', memoryType: 'knowledge', tags: ['gamma', 'delta'] });
+
+    entries = loadMemories(tmpDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].keywords).toEqual(expect.arrayContaining(['gamma', 'delta', 'updated', 'content']));
+    expect(entries[0].keywords).not.toEqual(expect.arrayContaining(['alpha', 'beta']));
+  });
+});
+
+describe('memory list --limit equivalent (listMemories)', () => {
+  let tmpDir: string;
+  const originalEnv = process.env.AGENTVAULT_PASSPHRASE;
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'av-mem-test-list-'));
+    fs.mkdirSync(path.join(tmpDir, '.agentvault'), { recursive: true });
+    process.env.AGENTVAULT_PASSPHRASE = 'test-memory-passphrase';
+    for (let i = 0; i < 20; i++) {
+      await storeMemory(tmpDir, { key: `mem-${i}`, content: `Content for memory ${i}`, memoryType: 'knowledge' });
+    }
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (originalEnv !== undefined) {
+      process.env.AGENTVAULT_PASSPHRASE = originalEnv;
+    } else {
+      delete process.env.AGENTVAULT_PASSPHRASE;
+    }
+  });
+
+  it('should return all entries when no limit is applied', async () => {
+    const entries = await listMemories(tmpDir);
+    expect(entries).toHaveLength(20);
+    expect(entries[0].contentLength).toBeGreaterThan(0);
+    expect(entries[0].accessCount).toBeDefined();
+  });
+
+  it('should filter by tag', async () => {
+    await storeMemory(tmpDir, { key: 'tagged-mem', content: 'Specific content', memoryType: 'knowledge', tags: ['special'] });
+    const entries = await listMemories(tmpDir, { tag: 'special' });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('tagged-mem');
+  });
+
+  it('should filter by memory type', async () => {
+    await storeMemory(tmpDir, { key: 'fact-mem', content: 'A known fact', memoryType: 'fact' });
+    const entries = await listMemories(tmpDir, { memoryType: 'fact' });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('fact-mem');
+  });
+});
+
+describe('comma-separated tag handling (via storeMemory, direct call)', () => {
+  let tmpDir: string;
+  const originalEnv = process.env.AGENTVAULT_PASSPHRASE;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'av-mem-test-comma-'));
+    fs.mkdirSync(path.join(tmpDir, '.agentvault'), { recursive: true });
+    process.env.AGENTVAULT_PASSPHRASE = 'test-memory-passphrase';
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (originalEnv !== undefined) {
+      process.env.AGENTVAULT_PASSPHRASE = originalEnv;
+    } else {
+      delete process.env.AGENTVAULT_PASSPHRASE;
+    }
+  });
+  it('should reject tags containing commas (CLI handles splitting)', async () => {
+    await expect(storeMemory(tmpDir, {
+      key: 'bad-tag-mem',
+      content: 'Content',
+      memoryType: 'knowledge',
+      tags: ['comma,tag'],
+    })).rejects.toThrow('Invalid tag');
+  });
+
+  it('should accept valid tags with hyphens and dots', async () => {
+    await expect(storeMemory(tmpDir, {
+      key: 'valid-tags-mem',
+      content: 'Content',
+      memoryType: 'knowledge',
+      tags: ['api-v2', 'my.feature', 'tag123'],
+    })).resolves.not.toThrow();
+  });
+});
+

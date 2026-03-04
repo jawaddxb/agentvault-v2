@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.1 (2026-03-04) — Docs, Examples, Tests
+- **Documentation:** Full `docs/` directory covering architecture, CLI, memory, security, MCP, and marketplace.
+- **Examples:** `examples/` directory with runnable quick-start, agent workflow, memory bank producer, MCP setup, and advanced profiles.
+- **Tests:** Expanded unit and CLI test coverage for recent features and bug fixes (123 total tests passing).
+- **Fix:** `memory store` now warns on duplicate key by default (`--overwrite` to suppress).
+- **Fix:** `memory list` now defaults to `--limit 100` with pagination footer (`--limit 0` for all).
+- **Fix:** `memory store --tags` now auto-splits comma-separated values.
+
 ## v2.0.0 (2026-03-04) — Gateway
 - Wallet management (create, show, sign)
 - Hono gateway server with /health, /banks, /discover, /checkout

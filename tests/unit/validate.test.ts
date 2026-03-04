@@ -93,4 +93,16 @@ describe('Input validation', () => {
       expect(() => validateTags([])).not.toThrow();
     });
   });
+
+  describe('validateTags - comma rejection', () => {
+    it('should reject tags containing commas (use CLI --tags for auto-split)', () => {
+      expect(() => validateTags(['performance,metrics'])).toThrow('Invalid tag');
+    });
+    it('should reject tags with spaces', () => {
+      expect(() => validateTags(['bad tag'])).toThrow('Invalid tag'); // Re-verify this existing test
+    });
+    it('should accept hyphenated tags and dot-separated tags', () => {
+      expect(() => validateTags(['api-v2', 'my.tag', 'test123'])).not.toThrow();
+    });
+  });
 });
