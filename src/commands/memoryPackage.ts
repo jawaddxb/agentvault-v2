@@ -47,7 +47,7 @@ export function memoryPackageCommand(): Command {
       }
 
       const bankDir = path.join(resolvePaths(dir).base, 'packaged-banks', opts.name);
-      fs.mkdirSync(bankDir, { recursive: true });
+      fs.mkdirSync(bankDir, { recursive: true, mode: 0o700 });
 
       // Write encrypted bank data
       const passphrase = getPassphrase(dir);
@@ -76,7 +76,7 @@ export function memoryPackageCommand(): Command {
         previewEntries,
         createdAt: new Date().toISOString(),
       };
-      fs.writeFileSync(path.join(bankDir, 'descriptor.json'), JSON.stringify(descriptor, null, 2));
+      fs.writeFileSync(path.join(bankDir, 'descriptor.json'), JSON.stringify(descriptor, null, 2), { mode: 0o600 });
 
       // Write license
       const now = new Date();
@@ -90,7 +90,7 @@ export function memoryPackageCommand(): Command {
         remainingAccesses: opts.maxAccesses ? parseInt(opts.maxAccesses) : undefined,
         maxAccesses: opts.maxAccesses ? parseInt(opts.maxAccesses) : undefined,
       };
-      fs.writeFileSync(path.join(bankDir, 'license.json'), JSON.stringify(license, null, 2));
+      fs.writeFileSync(path.join(bankDir, 'license.json'), JSON.stringify(license, null, 2), { mode: 0o600 });
 
       console.log(`Bank "${opts.name}" packaged: ${filtered.length} entries from tag "${opts.fromTag}"`);
       console.log(`  Location: ${bankDir}`);

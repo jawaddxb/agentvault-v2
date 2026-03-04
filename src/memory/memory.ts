@@ -68,10 +68,11 @@ export async function storeMemory(
     try {
       const entries = loadMemories(projectDir);
       const now = new Date().toISOString();
-      // Auto-extract keywords from content, merge with user-provided
+      // Auto-extract keywords from content, merge with user-provided keywords AND tags
       const autoKeywords = extractKeywords(opts.content);
       const userKeywords = (opts.keywords ?? []).map(k => k.toLowerCase().trim()).filter(k => k.length > 0);
-      const keywords = [...new Set([...autoKeywords, ...userKeywords])];
+      const tagKeywords = (opts.tags ?? []).map(t => t.toLowerCase().trim()).filter(t => t.length > 0);
+      const keywords = [...new Set([...autoKeywords, ...userKeywords, ...tagKeywords])];
       const qHash = opts.queryHash ?? undefined;
 
       // Check for same key → overwrite

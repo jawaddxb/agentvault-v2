@@ -39,7 +39,11 @@ function recencyBoost(entry: MemoryEntry): number {
 /** Score an entry against query tokens */
 function scoreEntry(entry: MemoryEntry, queryTokens: string[]): number {
   if (queryTokens.length === 0) return 0;
-  const entryKeywords = new Set(entry.keywords);
+  // Match against keywords (from content + user keywords) AND tags
+  const entryKeywords = new Set([
+    ...entry.keywords,
+    ...entry.tags.map(t => t.toLowerCase()),
+  ]);
   const matchCount = queryTokens.filter(t => entryKeywords.has(t)).length;
   const matchRatio = matchCount / queryTokens.length;
   return matchRatio * entry.confidence * freshnessMultiplier(entry) * recencyBoost(entry);
