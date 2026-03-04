@@ -3,7 +3,7 @@ import { serve } from '@hono/node-server';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../config/paths.js';
-import { getWalletAddress, loadWallet, verifySignature } from '../wallet/wallet.js';
+import { getWalletAddress, verifySignature } from '../wallet/wallet.js';
 import { loadBankEntries, loadBankDescriptor, listPurchasedBanks } from '../license/license.js';
 import { encrypt } from '../vault/encryption.js';
 import type { BankDescriptor, LicenseDescriptor } from '../types/index.js';
@@ -46,7 +46,10 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
   // Health endpoint
   app.get('/health', (c) => {
     let walletAddress = 'not configured';
-    try { walletAddress = getWalletAddress(projectDir); } catch { /* */ }
+    try {
+      const addr = getWalletAddress(projectDir);
+      walletAddress = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    } catch { /* */ }
 
     const banks = listPublishedBanks(projectDir);
 

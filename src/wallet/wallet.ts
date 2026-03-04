@@ -41,8 +41,8 @@ export function createWallet(projectDir: string): WalletInfo {
   return { address: wallet.address, createdAt: walletData.createdAt };
 }
 
-/** Load wallet (decrypted) */
-export function loadWallet(projectDir: string): { address: string; privateKey: string; mnemonic?: string; createdAt: string } {
+/** Load wallet (decrypted) — private, only accessible within wallet.ts */
+function _loadWallet(projectDir: string): { address: string; privateKey: string; mnemonic?: string; createdAt: string } {
   const fp = walletPath(projectDir);
   if (!fs.existsSync(fp)) {
     throw new Error('No wallet found. Run `agentvault wallet create` first.');
@@ -56,21 +56,34 @@ export function loadWallet(projectDir: string): { address: string; privateKey: s
 
 /** Get wallet address without exposing private key */
 export function getWalletAddress(projectDir: string): string {
-  return loadWallet(projectDir).address;
+  return _loadWallet(projectDir).address;
+}
+
+/** Get an ethers.Wallet instance without exposing raw private key */
+export function getSignerWallet(projectDir: string): ethers.Wallet {
+  const { privateKey } = _loadWallet(projectDir);
+  return new ethers.Wallet(privateKey);
 }
 
 /** Get an ethers.Wallet instance connected to a provider */
 export function getConnectedWallet(projectDir: string, rpcUrl: string): ethers.Wallet {
-  const { privateKey } = loadWallet(projectDir);
   const provider = new ethers.JsonRpcProvider(rpcUrl);
-  return new ethers.Wallet(privateKey, provider);
+  return getSignerWallet(projectDir).connect(provider);
 }
 
 /** Sign a message with the wallet (for auth proofs) */
 export async function signMessage(projectDir: string, message: string): Promise<string> {
-  const { privateKey } = loadWallet(projectDir);
-  const wallet = new ethers.Wallet(privateKey);
+  const wallet = getSignerWallet(projectDir);
   return wallet.signMessage(message);
+}
+
+/** Export the wallet mnemonic phrase — handle with extreme care */
+export function exportMnemonic(projectDir: string): string {
+  const { mnemonic } = _loadWallet(projectDir);
+  if (!mnemonic) {
+    throw new Error('No mnemonic available (wallet may have been imported from a private key).');
+  }
+  return mnemonic;
 }
 
 /** Verify a signed message */

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWallet, getWalletAddress, loadWallet, signMessage, verifySignature } from '../../src/wallet/wallet.js';
+import { createWallet, getWalletAddress, getSignerWallet, signMessage, verifySignature } from '../../src/wallet/wallet.js';
 
 describe('Wallet', () => {
   let tmpDir: string;
@@ -58,9 +58,9 @@ describe('Wallet', () => {
 
   it('should load full wallet with private key', () => {
     createWallet(tmpDir);
-    const wallet = loadWallet(tmpDir);
-    expect(wallet.privateKey).toMatch(/^0x[0-9a-fA-F]{64}$/);
-    expect(wallet.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    const signer = getSignerWallet(tmpDir);
+    expect(signer.privateKey).toMatch(/^0x[0-9a-fA-F]{64}$/);
+    expect(signer.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
   });
 
   it('should sign and verify messages', async () => {

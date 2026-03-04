@@ -42,9 +42,18 @@ export function auditCommand(): Command {
 
       let content: string;
       if (opts.format === 'csv') {
+        function csvEscape(val: string): string {
+          const s = String(val ?? '');
+          if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+            return `"${s.replace(/"/g, '""')}"`;
+          }
+          return s;
+        }
         const header = 'id,sessionId,agentId,profileName,varName,action,timestamp';
         const rows = entries.map(e =>
-          `${e.id},${e.sessionId},${e.agentId},${e.profileName},${e.varName},${e.action},${e.timestamp}`
+          [e.id, e.sessionId, e.agentId, e.profileName, e.varName, e.action, e.timestamp]
+            .map(f => csvEscape(String(f ?? '')))
+            .join(',')
         );
         content = [header, ...rows].join('\n');
       } else {

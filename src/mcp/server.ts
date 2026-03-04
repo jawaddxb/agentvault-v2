@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -13,14 +14,18 @@ import { getSecret, listSecretKeys } from '../vault/vault.js';
 import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories } from '../memory/memory.js';
 import { checkLicense, consumeAccess, loadBankEntries, listPurchasedBanks, loadLicense } from '../license/license.js';
 import { searchMemories } from '../memory/search.js';
-import { queryAudit } from '../audit/audit.js';
-import { listProfiles, loadProfile } from '../profiles/profiles.js';
+import { queryAudit, logAccess } from '../audit/audit.js';
+import { listProfiles, loadProfile, checkAccess } from '../profiles/profiles.js';
 import { loadVault } from '../vault/vault.js';
 import { evaluateEnv } from '../sandbox/evaluateEnv.js';
 import { exportPortable } from '../portable/portable.js';
 import { getPassphrase } from '../vault/encryption.js';
+import { vaultMutex } from '../memory/mutex.js';
 import { MCP_RATE_LIMIT, MCP_DRAIN_TIMEOUT_MS, MCP_TOKEN_ENV } from '../config/defaults.js';
-import type { McpResponse, McpBudget, McpErrorCode, MemoryType } from '../types/index.js';
+import type { McpResponse, McpBudget, McpErrorCode, MemoryType, Profile } from '../types/index.js';
+
+// M6: Read version from package.json
+const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')) as { version: string };
 
 function ok<T>(data: T): McpResponse<T> {
   return { success: true, data };
@@ -36,6 +41,7 @@ interface McpServerOptions {
   projectDir: string;
   budget?: number;
   rateLimit?: number;
+  profileName?: string; // H2: optional profile enforcement
 }
 
 /** Rate limiter state — initialized fresh, may be inherited from previous session */
@@ -86,6 +92,34 @@ function saveBudget(projectDir: string): void {
     fs.writeFileSync(budgetPath, JSON.stringify(budget, null, 2));
   } catch {
     // Best-effort budget persistence
+  }
+}
+
+// H2: Check if a secret key is accessible under the active profile
+function checkSecretAccess(key: string, profile: Profile | null): 'allow' | 'deny' | 'redact' {
+  if (!profile) return 'allow'; // No profile = allow all (backward compat)
+  return checkAccess(profile, key);
+}
+
+// H2: Log secret access to audit log when profile is active
+function logSecretAudit(
+  projectDir: string,
+  key: string,
+  action: 'allow' | 'deny' | 'redact',
+  profile: Profile | null
+): void {
+  if (!profile) return; // Only audit when profile is active
+  try {
+    logAccess(projectDir, {
+      sessionId: `mcp-${process.pid}`,
+      agentId: 'mcp-client',
+      profileName: profile.name,
+      varName: key,
+      action,
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    // Best-effort audit logging
   }
 }
 
@@ -205,21 +239,56 @@ const TOOLS = [
 async function handleTool(
   name: string,
   args: Record<string, unknown>,
-  projectDir: string
+  projectDir: string,
+  activeProfile: Profile | null
 ): Promise<McpResponse> {
   try {
     switch (name) {
       case 'vault.secret.get': {
         const key = args.key as string;
         if (!key) return fail('Missing key parameter', 'INVALID_INPUT');
-        const value = getSecret(projectDir, key);
-        if (value === undefined) return fail(`Secret not found: ${key}`, 'KEY_NOT_FOUND');
-        return ok({ key, value });
+
+        // H2 + M2: check profile access under mutex
+        return await vaultMutex.runExclusive(async () => {
+          const access = checkSecretAccess(key, activeProfile);
+          logSecretAudit(projectDir, key, access, activeProfile);
+
+          if (access === 'deny') {
+            return fail(`Access denied to secret: ${key}`, 'UNAUTHORIZED');
+          }
+
+          const value = getSecret(projectDir, key);
+          if (value === undefined) return fail(`Secret not found: ${key}`, 'KEY_NOT_FOUND');
+
+          if (access === 'redact') {
+            return ok({ key, value: '[REDACTED]' });
+          }
+
+          return ok({ key, value });
+        });
       }
 
       case 'vault.secret.list': {
-        const keys = listSecretKeys(projectDir);
-        return ok({ keys, count: keys.length });
+        // H2 + M2: filter keys by profile under mutex
+        return await vaultMutex.runExclusive(async () => {
+          const allKeys = listSecretKeys(projectDir);
+
+          if (!activeProfile) {
+            return ok({ keys: allKeys, count: allKeys.length });
+          }
+
+          // Filter denied keys; mark redacted keys
+          const filtered = allKeys
+            .map(key => {
+              const access = checkSecretAccess(key, activeProfile);
+              logSecretAudit(projectDir, key, access, activeProfile);
+              return { key, access };
+            })
+            .filter(({ access }) => access !== 'deny')
+            .map(({ key, access }) => access === 'redact' ? `${key} [REDACTED]` : key);
+
+          return ok({ keys: filtered, count: filtered.length });
+        });
       }
 
       case 'vault.memory.store': {
@@ -377,8 +446,21 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
   configuredRateLimit = options.rateLimit ?? MCP_RATE_LIMIT;
   tryInheritBudget(projectDir);
 
+  // H2: Load profile at startup if specified
+  let activeProfile: Profile | null = null;
+  if (options.profileName) {
+    try {
+      activeProfile = loadProfile(projectDir, options.profileName);
+      console.error(`Profile enforcement active: ${options.profileName}`);
+    } catch (e) {
+      console.error(`Failed to load profile '${options.profileName}': ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    }
+  }
+
+  // M6: Use version from package.json
   const server = new Server(
-    { name: 'agentvault', version: '1.0.0' },
+    { name: 'agentvault', version: pkg.version },
     { capabilities: { tools: {}, resources: {} } }
   );
 
@@ -400,7 +482,8 @@ export async function startMcpServer(options: McpServerOptions): Promise<void> {
     const result = await handleTool(
       request.params.name,
       (request.params.arguments ?? {}) as Record<string, unknown>,
-      projectDir
+      projectDir,
+      activeProfile
     );
 
     return {

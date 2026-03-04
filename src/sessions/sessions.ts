@@ -1,19 +1,36 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
 import { resolvePaths } from '../config/paths.js';
+import { getPassphrase, readEncryptedFile, writeEncryptedFile } from '../vault/encryption.js';
 import type { Session } from '../types/index.js';
 
 function loadSessions(projectDir: string): Session[] {
   const fp = resolvePaths(projectDir).sessions;
   if (!fs.existsSync(fp)) return [];
-  return JSON.parse(fs.readFileSync(fp, 'utf-8'));
+
+  const passphrase = getPassphrase(projectDir);
+
+  // Try encrypted format first; fall back to plaintext (migration path)
+  try {
+    return readEncryptedFile<Session[]>(fp, passphrase, []);
+  } catch {
+    // Fallback: try reading as plaintext JSON (migrating from unencrypted)
+    try {
+      const raw = fs.readFileSync(fp, 'utf-8');
+      const sessions = JSON.parse(raw) as Session[];
+      // Re-save in encrypted format immediately
+      writeEncryptedFile(fp, sessions, passphrase);
+      return sessions;
+    } catch {
+      return [];
+    }
+  }
 }
 
 function saveSessions(projectDir: string, sessions: Session[]): void {
   const fp = resolvePaths(projectDir).sessions;
-  fs.mkdirSync(path.dirname(fp), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(fp, JSON.stringify(sessions, null, 2), { mode: 0o600 });
+  const passphrase = getPassphrase(projectDir);
+  writeEncryptedFile(fp, sessions, passphrase);
 }
 
 /** Create a new agent session */
