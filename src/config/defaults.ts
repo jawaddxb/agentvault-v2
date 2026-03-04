@@ -39,7 +39,7 @@ export const MEMORY_WARN_PERCENT = 0.8;
 
 /** Memory search */
 export const MIN_KEYWORD_LENGTH = 3;
-export const MAX_KEYWORDS = 20;
+export const MAX_KEYWORDS = 40;
 export const MIN_SEARCH_SCORE = 0.1;
 
 /** MCP rate limit */

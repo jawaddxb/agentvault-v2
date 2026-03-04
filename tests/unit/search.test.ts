@@ -45,10 +45,10 @@ describe('extractKeywords', () => {
     expect(keywords).toEqual(['hello', 'world']);
   });
 
-  it('should limit to 20 keywords', () => {
-    const words = Array.from({ length: 30 }, (_, i) => `word${i.toString().padStart(3, '0')}`);
+  it('should limit to MAX_KEYWORDS', () => {
+    const words = Array.from({ length: 50 }, (_, i) => `word${i.toString().padStart(3, '0')}`);
     const keywords = extractKeywords(words.join(' '));
-    expect(keywords.length).toBe(20);
+    expect(keywords.length).toBe(40);
   });
 
   it('should split on punctuation', () => {

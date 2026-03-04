@@ -2,15 +2,72 @@ import crypto from 'node:crypto';
 import { STOPWORDS, MIN_KEYWORD_LENGTH, MAX_KEYWORDS, MIN_SEARCH_SCORE } from '../config/defaults.js';
 import type { MemoryEntry } from '../types/index.js';
 
-/** Extract keywords from content: lowercase, split, filter, dedupe, max 20 */
-export function extractKeywords(content: string): string[] {
-  const words = content
-    .toLowerCase()
-    .split(/[\s\p{P}]+/u)
-    .filter(w => w.length >= MIN_KEYWORD_LENGTH)
-    .filter(w => !STOPWORDS.has(w));
+/** Detect if a character is CJK (Chinese, Japanese, Korean) */
+function isCJK(char: string): boolean {
+  const code = char.codePointAt(0) ?? 0;
+  return (
+    (code >= 0x4E00 && code <= 0x9FFF) ||   // CJK Unified Ideographs
+    (code >= 0x3400 && code <= 0x4DBF) ||   // CJK Extension A
+    (code >= 0x3040 && code <= 0x309F) ||   // Hiragana
+    (code >= 0x30A0 && code <= 0x30FF) ||   // Katakana
+    (code >= 0xAC00 && code <= 0xD7AF) ||   // Korean Hangul
+    (code >= 0x3000 && code <= 0x303F)      // CJK Symbols
+  );
+}
 
-  const unique = [...new Set(words)];
+/** Extract CJK bigrams from a string of CJK characters */
+function extractCJKBigrams(text: string): string[] {
+  const chars = [...text]; // Handle multi-byte correctly
+  const bigrams: string[] = [];
+  // Add individual characters as tokens (unigrams)
+  for (const ch of chars) {
+    if (ch.trim()) bigrams.push(ch);
+  }
+  // Add bigrams for better matching
+  for (let i = 0; i < chars.length - 1; i++) {
+    bigrams.push(chars[i] + chars[i + 1]);
+  }
+  return bigrams;
+}
+
+/** Extract keywords from content: lowercase, split, filter, dedupe, max 20
+ *  Handles Latin, CJK (bigrams), and Arabic scripts */
+export function extractKeywords(content: string): string[] {
+  const lower = content.toLowerCase();
+
+  // Split CJK and non-CJK segments
+  const segments: string[] = [];
+  let currentSegment = '';
+  let currentIsCJK = false;
+
+  for (const char of lower) {
+    const charIsCJK = isCJK(char);
+    if (charIsCJK !== currentIsCJK && currentSegment) {
+      segments.push(currentSegment);
+      currentSegment = '';
+    }
+    currentSegment += char;
+    currentIsCJK = charIsCJK;
+  }
+  if (currentSegment) segments.push(currentSegment);
+
+  const keywords: string[] = [];
+
+  for (const segment of segments) {
+    if (isCJK(segment[0])) {
+      // CJK: extract unigrams + bigrams
+      keywords.push(...extractCJKBigrams(segment));
+    } else {
+      // Latin/Arabic/other: split on whitespace + punctuation
+      const words = segment
+        .split(/[\s\p{P}]+/u)
+        .filter(w => w.length >= MIN_KEYWORD_LENGTH)
+        .filter(w => !STOPWORDS.has(w));
+      keywords.push(...words);
+    }
+  }
+
+  const unique = [...new Set(keywords)];
   return unique.slice(0, MAX_KEYWORDS);
 }
 
