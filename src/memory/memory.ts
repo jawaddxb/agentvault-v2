@@ -210,3 +210,20 @@ export async function exportMemories(projectDir: string): Promise<MemoryEntry[]>
     return loadMemories(projectDir);
   });
 }
+
+/** Export memories with optional tag/type filters */
+export async function exportFilteredMemories(
+  projectDir: string,
+  opts?: { tag?: string; memoryType?: MemoryType }
+): Promise<MemoryEntry[]> {
+  return memoryMutex.runExclusive(() => {
+    let entries = loadMemories(projectDir);
+    if (opts?.tag) {
+      entries = entries.filter(e => e.tags.includes(opts.tag!));
+    }
+    if (opts?.memoryType) {
+      entries = entries.filter(e => e.memoryType === opts.memoryType);
+    }
+    return entries;
+  });
+}

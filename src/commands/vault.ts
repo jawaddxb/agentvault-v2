@@ -54,15 +54,17 @@ export function vaultCommand(): Command {
       }
 
       let secretCount = 0;
-      let skippedCount = 0;
+      let skippedSecrets = 0;
       let memoryCount = 0;
+      let skippedMemories = 0;
       const { loadVault: loadExisting } = await import('../vault/vault.js');
       const existingKeys = new Set(loadExisting(process.cwd()).map(e => e.key));
+      const existingMemKeys = new Set(loadMemories(process.cwd()).map(e => e.key));
 
       for (const entry of portable.entries) {
         if (existingKeys.has(entry.key) && !opts.merge) {
-          console.log(`  Skipped: ${entry.key} (already exists, use --merge to overwrite)`);
-          skippedCount++;
+          console.log(`  Skipped secret: ${entry.key} (already exists, use --merge to overwrite)`);
+          skippedSecrets++;
           continue;
         }
         addSecret(process.cwd(), entry.key, entry.value);
@@ -70,6 +72,19 @@ export function vaultCommand(): Command {
       }
 
       for (const mem of portable.memories) {
+        if (existingMemKeys.has(mem.key) && !opts.merge) {
+          console.log(`  Skipped memory: ${mem.key} (already exists, use --merge to overwrite)`);
+          skippedMemories++;
+          continue;
+        }
+
+        // Preserve TTL by recomputing from expiresAt
+        let ttlSeconds: number | undefined;
+        if (mem.expiresAt) {
+          const remaining = Math.round((new Date(mem.expiresAt).getTime() - Date.now()) / 1000);
+          if (remaining > 0) ttlSeconds = remaining;
+        }
+
         await storeMemory(process.cwd(), {
           key: mem.key,
           content: mem.content,
@@ -77,12 +92,15 @@ export function vaultCommand(): Command {
           tags: mem.tags,
           confidence: mem.confidence,
           source: mem.source,
+          queryHash: mem.queryHash,
+          ttlSeconds,
         });
         memoryCount++;
       }
 
       console.log(`Imported ${secretCount} secret(s) and ${memoryCount} memory/memories from ${input}`);
-      if (skippedCount) console.log(`Skipped ${skippedCount} existing secret(s)`);
+      if (skippedSecrets) console.log(`Skipped ${skippedSecrets} existing secret(s)`);
+      if (skippedMemories) console.log(`Skipped ${skippedMemories} existing memory/memories`);
     });
 
   return cmd;

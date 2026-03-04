@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How AgentVault MCP Works</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+      --code-bg: #1c2128;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.75rem;
+    }
+    h1 span { color: var(--accent); }
+    h2 {
+      font-size: 1.4rem;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+    p { margin-bottom: 1rem; color: var(--text-muted); }
+    strong { color: var(--text); }
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      background: var(--code-bg);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-size: 0.9em;
+      color: var(--accent);
+    }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text);
+    }
+    .keyword { color: var(--red); }
+    .string { color: var(--green); }
+    .comment { color: var(--text-muted); }
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .diagram-box {
+      display: inline-block;
+      border: 2px solid var(--accent-dim);
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      margin: 0.5rem;
+      background: var(--code-bg);
+      vertical-align: middle;
+    }
+    .diagram-box.vault {
+      border-color: var(--green);
+    }
+    .diagram-box h3 {
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+      color: var(--accent);
+    }
+    .diagram-box.vault h3 { color: var(--green); }
+    .diagram-box p {
+      font-size: 0.8rem;
+      margin: 0;
+    }
+    .diagram-arrow {
+      display: inline-block;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      vertical-align: middle;
+      margin: 0 0.5rem;
+    }
+    .diagram-label {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: -0.25rem;
+      margin-bottom: 0.5rem;
+    }
+    ol, ul {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      color: var(--text-muted);
+    }
+    li { margin-bottom: 0.5rem; }
+    li strong { color: var(--text); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.5rem;
+    }
+    th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td {
+      padding: 0.6rem 1rem;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    tr:hover td { background: var(--surface); }
+    .badge {
+      display: inline-block;
+      padding: 0.15em 0.5em;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-local { background: rgba(63,185,80,0.15); color: var(--green); }
+    .badge-encrypted { background: rgba(88,166,255,0.15); color: var(--accent); }
+    .callout {
+      background: var(--surface);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .callout p { margin: 0; }
+    .flow-step {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+    .flow-step .num {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-right: 0.75rem;
+      margin-top: 0.1rem;
+    }
+    .flow-step .desc { color: var(--text-muted); }
+    .flow-step .desc strong { color: var(--text); }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>How <span>AgentVault</span> MCP Works</h1>
+
+  <h2>Installation &amp; Setup</h2>
+  <p>When someone installs AgentVault via npm:</p>
+  <pre><code><span class="comment"># Install globally (or use npx)</span>
+npm install -g agent-vault
+
+<span class="comment"># Initialize in your project</span>
+agentvault init</code></pre>
+  <p>This creates a local <code>.agentvault/</code> directory with encrypted files (<code>vault.json</code>, <code>memory.json</code>, <code>audit.db</code>) &mdash; all on disk, <strong>no cloud, no network</strong>.</p>
+
+  <h2>The MCP Server</h2>
+  <p>The MCP server is <strong>not a daemon</strong> &mdash; it's a <strong>stdio process</strong> that an AI tool spawns on demand.</p>
+
+  <div class="diagram">
+    <div class="diagram-box">
+      <h3>AI Tool</h3>
+      <p>Claude Code, Cursor,<br>Claude Desktop, Zed</p>
+    </div>
+    <span class="diagram-arrow">&harr;</span>
+    <div class="diagram-box">
+      <h3>agentvault mcp start</h3>
+      <p>stdio &middot; JSON-RPC</p>
+    </div>
+    <span class="diagram-arrow">&rarr;</span>
+    <div class="diagram-box vault">
+      <h3>.agentvault/</h3>
+      <p>vault.json &middot; memory.json<br>audit.db</p>
+    </div>
+    <br>
+    <span class="diagram-label">stdin/stdout &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; encrypted files on local disk</span>
+  </div>
+
+  <h2>How an AI Tool Connects</h2>
+  <p>The user adds a config entry (e.g., <code>.mcp.json</code> for Claude Code):</p>
+  <pre><code>{
+  <span class="string">"mcpServers"</span>: {
+    <span class="string">"agentvault"</span>: {
+      <span class="string">"command"</span>: <span class="string">"agentvault"</span>,
+      <span class="string">"args"</span>: [<span class="string">"mcp"</span>, <span class="string">"start"</span>],
+      <span class="string">"env"</span>: { <span class="string">"AGENTVAULT_PASSPHRASE"</span>: <span class="string">"their-passphrase"</span> }
+    }
+  }
+}</code></pre>
+
+  <p>When Claude Code starts, it:</p>
+  <div class="flow-step"><div class="num">1</div><div class="desc"><strong>Spawns</strong> <code>agentvault mcp start</code> as a child process</div></div>
+  <div class="flow-step"><div class="num">2</div><div class="desc"><strong>Handshakes</strong> via JSON-RPC over stdin/stdout (MCP protocol)</div></div>
+  <div class="flow-step"><div class="num">3</div><div class="desc"><strong>Discovers</strong> the 11 tools (<code>vault.memory.store</code>, <code>vault.memory.query</code>, <code>vault.secret.get</code>, etc.)</div></div>
+  <div class="flow-step"><div class="num">4</div><div class="desc"><strong>Calls</strong> those tools during conversation &mdash; the AI model decides when to use them</div></div>
+
+  <h2>What Happens on a Memory Call</h2>
+  <p>When Claude decides to store a memory:</p>
+
+  <pre><code><span class="comment">// 1. Claude sends a tool call via JSON-RPC</span>
+Claude <span class="keyword">&rarr;</span> { method: <span class="string">"tools/call"</span>, params: {
+  name: <span class="string">"vault.memory.store"</span>,
+  arguments: {
+    key: <span class="string">"api-pattern"</span>,
+    content: <span class="string">"Always use retry with exponential backoff"</span>,
+    memoryType: <span class="string">"knowledge"</span>
+  }
+}}
+
+<span class="comment">// 2. agentvault process handles it:</span>
+<span class="comment">//    - Rate-limit check (60 calls/min)</span>
+<span class="comment">//    - Decrypt memory.json using passphrase</span>
+<span class="comment">//    - Add entry with auto-extracted keywords</span>
+<span class="comment">//    - Re-encrypt and write to disk</span>
+
+<span class="comment">// 3. Response sent back</span>
+Claude <span class="keyword">&larr;</span> { success: <span class="keyword">true</span>, data: { key: <span class="string">"api-pattern"</span>, keywords: <span class="string">5</span> } }</code></pre>
+
+  <h2>Key Points</h2>
+
+  <div class="callout">
+    <p><span class="badge badge-local">100% LOCAL</span> &nbsp; No cloud, no API calls, no network. Everything is encrypted files on disk.</p>
+  </div>
+  <div class="callout">
+    <p><span class="badge badge-encrypted">ENCRYPTED</span> &nbsp; AES-256-GCM with scrypt key derivation. Random salt per file. The AI agent never sees the passphrase.</p>
+  </div>
+
+  <ul>
+    <li><strong>Process lifecycle</strong> &mdash; the MCP server lives only as long as the AI tool's session. Close Claude Code, the process exits.</li>
+    <li><strong>Per-project</strong> &mdash; each project directory gets its own <code>.agentvault/</code> with separate encrypted stores.</li>
+    <li><strong>The AI agent doesn't know the passphrase</strong> &mdash; it's passed via env var to the server process. The agent only sees decrypted results through MCP tool responses.</li>
+  </ul>
+
+  <h2>Supported AI Tools</h2>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Config Location</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Claude Code</td><td><code>.mcp.json</code> in project root</td></tr>
+      <tr><td>Claude Desktop</td><td><code>~/Library/Application Support/Claude/claude_desktop_config.json</code></td></tr>
+      <tr><td>Cursor</td><td><code>~/.cursor/mcp.json</code></td></tr>
+      <tr><td>Zed</td><td><code>context_servers</code> in Zed's <code>settings.json</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>11 MCP Tools Exposed</h2>
+  <table>
+    <thead>
+      <tr><th>Tool</th><th>Description</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>vault.secret.get</code></td><td>Retrieve a secret by key</td></tr>
+      <tr><td><code>vault.secret.list</code></td><td>List all secret keys</td></tr>
+      <tr><td><code>vault.memory.store</code></td><td>Store an encrypted memory entry</td></tr>
+      <tr><td><code>vault.memory.query</code></td><td>Search memories by keywords</td></tr>
+      <tr><td><code>vault.memory.list</code></td><td>List memory metadata (no content)</td></tr>
+      <tr><td><code>vault.memory.remove</code></td><td>Delete a memory entry</td></tr>
+      <tr><td><code>vault.audit.show</code></td><td>View audit trail</td></tr>
+      <tr><td><code>vault.status</code></td><td>Vault health and stats</td></tr>
+      <tr><td><code>vault.profile.show</code></td><td>Show a permission profile</td></tr>
+      <tr><td><code>vault.preview</code></td><td>Preview env vars an agent would see</td></tr>
+      <tr><td><code>vault.export</code></td><td>Export portable vault (.avault)</td></tr>
+    </tbody>
+  </table>
+
+  <hr style="border: none; border-top: 1px solid var(--border); margin: 3rem 0 2rem;">
+
+  <h2>What is a stdio Process?</h2>
+  <p><strong>stdio</strong> (standard input/output) is the simplest form of inter-process communication. Two processes talk by writing to each other's stdin/stdout streams &mdash; no sockets, no ports, no network.</p>
+
+  <h3 style="font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 1rem;">In AgentVault's case:</h3>
+  <pre><code>Claude Code (parent process)
+    &boxv;
+    &boxvr;&horbar;&horbar; spawns: agentvault mcp start (child process)
+    &boxv;
+    &boxvr;&horbar;&horbar; writes to child's stdin  &rarr;  <span class="string">"hey, store this memory"</span>
+    &boxv;
+    &boxur;&horbar;&horbar; reads from child's stdout &larr;  <span class="string">"done, here's the result"</span></code></pre>
+
+  <p>It's like two programs connected by a pipe:</p>
+  <pre><code><span class="comment"># Conceptually similar to:</span>
+echo <span class="string">'{"method":"tools/call",...}'</span> | agentvault mcp start</code></pre>
+
+  <h3 style="font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 1rem;">Why stdio instead of HTTP/WebSocket?</h3>
+  <table>
+    <thead>
+      <tr><th></th><th>stdio</th><th>HTTP server</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Startup</strong></td><td>Instant &mdash; just spawn a process</td><td>Need to bind a port, listen</td></tr>
+      <tr><td><strong>Security</strong></td><td>No network exposure at all</td><td>Port is open, needs auth</td></tr>
+      <tr><td><strong>Lifecycle</strong></td><td>Dies when parent dies</td><td>Can linger as orphan</td></tr>
+      <tr><td><strong>Config</strong></td><td>Zero &mdash; no ports, no URLs</td><td>Need to pick port, handle conflicts</td></tr>
+      <tr><td><strong>Firewall</strong></td><td>Not involved</td><td>May block connections</td></tr>
+    </tbody>
+  </table>
+
+  <h3 style="font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 1rem;">The actual data format</h3>
+  <p>The messages are <strong>JSON-RPC 2.0</strong>, sent as newline-delimited JSON over the pipe:</p>
+  <pre><code><span class="comment">// Request (Claude Code writes to child's stdin)</span>
+<span class="keyword">&rarr;</span> {<span class="string">"jsonrpc"</span>:<span class="string">"2.0"</span>,<span class="string">"id"</span>:1,<span class="string">"method"</span>:<span class="string">"tools/call"</span>,<span class="string">"params"</span>:{
+    <span class="string">"name"</span>:<span class="string">"vault.memory.store"</span>,
+    <span class="string">"arguments"</span>:{<span class="string">"key"</span>:<span class="string">"api-tip"</span>,<span class="string">"content"</span>:<span class="string">"use retries"</span>,<span class="string">"memoryType"</span>:<span class="string">"knowledge"</span>}
+  }}
+
+<span class="comment">// Response (child writes to stdout)</span>
+<span class="keyword">&larr;</span> {<span class="string">"jsonrpc"</span>:<span class="string">"2.0"</span>,<span class="string">"id"</span>:1,<span class="string">"result"</span>:{<span class="string">"content"</span>:[{
+    <span class="string">"type"</span>:<span class="string">"text"</span>,
+    <span class="string">"text"</span>:<span class="string">"{\"success\":true,\"data\":{\"key\":\"api-tip\",\"keywords\":2}}"</span>
+  }]}}</code></pre>
+
+  <h3 style="font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 1rem;">The lifecycle</h3>
+  <div class="flow-step"><div class="num">1</div><div class="desc"><strong>Claude Code starts</strong> &rarr; reads <code>.mcp.json</code> &rarr; sees <code>"command": "agentvault"</code></div></div>
+  <div class="flow-step"><div class="num">2</div><div class="desc"><strong>Spawns child process</strong> &rarr; <code>agentvault mcp start</code> begins, waiting on stdin</div></div>
+  <div class="flow-step"><div class="num">3</div><div class="desc"><strong>Handshake</strong> &rarr; Claude Code sends <code>initialize</code> request, server responds with capabilities + tool list</div></div>
+  <div class="flow-step"><div class="num">4</div><div class="desc"><strong>Conversation</strong> &rarr; every time the AI decides to use a vault tool, Claude Code writes a JSON-RPC message to stdin, reads the response from stdout</div></div>
+  <div class="flow-step"><div class="num">5</div><div class="desc"><strong>Session ends</strong> &rarr; Claude Code sends <code>SIGTERM</code>, server flushes state and exits</div></div>
+
+  <p>The server's <code>stderr</code> is used for logging (like <code>"AgentVault MCP server running on stdio"</code>) &mdash; it doesn't interfere with the JSON-RPC protocol on stdout.</p>
+
+  <div class="callout" style="border-left-color: var(--orange); margin-top: 1.5rem;">
+    <p><strong>Key insight:</strong> The MCP server is <strong>not running in the background waiting for connections</strong>. It's a short-lived process that exists only while the AI tool is using it &mdash; like a command-line tool that happens to keep running until the conversation ends.</p>
+  </div>
+
+  <footer>AgentVault v2 &mdash; Encrypted agent credential and memory vault with MCP server</footer>
+
+</body>
+</html>
