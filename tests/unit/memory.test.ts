@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories, loadMemories } from '../../src/memory/memory.js';
+import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories, exportFilteredMemories, loadMemories } from '../../src/memory/memory.js';
+import { exportMemoryPortable, importMemoryPortable } from '../../src/portable/portable.js';
 
 describe('memory', () => {
   let tmpDir: string;
@@ -284,6 +285,140 @@ describe('comma-separated tag handling (via storeMemory, direct call)', () => {
       memoryType: 'knowledge',
       tags: ['api-v2', 'my.feature', 'tag123'],
     })).resolves.not.toThrow();
+  });
+});
+
+describe('exportFilteredMemories', () => {
+  let tmpDir: string;
+  const originalEnv = process.env.AGENTVAULT_PASSPHRASE;
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'av-mem-test-filtered-'));
+    fs.mkdirSync(path.join(tmpDir, '.agentvault'), { recursive: true });
+    process.env.AGENTVAULT_PASSPHRASE = 'test-memory-passphrase';
+
+    await storeMemory(tmpDir, { key: 'sec-1', content: 'Security rule about input validation', memoryType: 'knowledge', tags: ['security', 'owasp'] });
+    await storeMemory(tmpDir, { key: 'arch-1', content: 'Architecture rule about splitting apps', memoryType: 'knowledge', tags: ['architecture'] });
+    await storeMemory(tmpDir, { key: 'ops-1', content: 'Operational note about deployment', memoryType: 'operational', tags: ['devops'] });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (originalEnv !== undefined) {
+      process.env.AGENTVAULT_PASSPHRASE = originalEnv;
+    } else {
+      delete process.env.AGENTVAULT_PASSPHRASE;
+    }
+  });
+
+  it('should export all when no filters', async () => {
+    const entries = await exportFilteredMemories(tmpDir);
+    expect(entries).toHaveLength(3);
+    expect(entries[0].content).toBeTruthy();
+  });
+
+  it('should filter by tag', async () => {
+    const entries = await exportFilteredMemories(tmpDir, { tag: 'security' });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('sec-1');
+  });
+
+  it('should filter by memoryType', async () => {
+    const entries = await exportFilteredMemories(tmpDir, { memoryType: 'operational' });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('ops-1');
+  });
+
+  it('should filter by both tag and type', async () => {
+    const entries = await exportFilteredMemories(tmpDir, { tag: 'architecture', memoryType: 'knowledge' });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].key).toBe('arch-1');
+  });
+
+  it('should return empty for non-matching filter', async () => {
+    const entries = await exportFilteredMemories(tmpDir, { tag: 'nonexistent' });
+    expect(entries).toHaveLength(0);
+  });
+});
+
+describe('memory portable format roundtrip', () => {
+  let tmpDir: string;
+  let tmpDir2: string;
+  const originalEnv = process.env.AGENTVAULT_PASSPHRASE;
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'av-mem-portable-src-'));
+    tmpDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'av-mem-portable-dst-'));
+    fs.mkdirSync(path.join(tmpDir, '.agentvault'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir2, '.agentvault'), { recursive: true });
+    process.env.AGENTVAULT_PASSPHRASE = 'test-memory-passphrase';
+
+    await storeMemory(tmpDir, { key: 'rule-1', content: 'Always validate user input at boundaries', memoryType: 'knowledge', tags: ['security'], confidence: 0.95 });
+    await storeMemory(tmpDir, { key: 'rule-2', content: 'Use parameterized queries for database access', memoryType: 'knowledge', tags: ['security', 'database'], confidence: 0.9 });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(tmpDir2, { recursive: true, force: true });
+    if (originalEnv !== undefined) {
+      process.env.AGENTVAULT_PASSPHRASE = originalEnv;
+    } else {
+      delete process.env.AGENTVAULT_PASSPHRASE;
+    }
+  });
+
+  it('should export and import memories via encrypted portable format', async () => {
+    const exportPath = path.join(tmpDir, 'memories.avault');
+    const entries = await exportMemories(tmpDir);
+    exportMemoryPortable(entries, exportPath, 'share-pass');
+
+    // File should exist and be encrypted (has salt/iv/tag/data)
+    const raw = JSON.parse(fs.readFileSync(exportPath, 'utf-8'));
+    expect(raw.salt).toBeTruthy();
+    expect(raw.iv).toBeTruthy();
+    expect(raw.tag).toBeTruthy();
+    expect(raw.data).toBeTruthy();
+
+    // Import into second vault
+    const imported = importMemoryPortable(exportPath, 'share-pass');
+    expect(imported).toHaveLength(2);
+    expect(imported[0].key).toBe('rule-1');
+    expect(imported[0].content).toBe('Always validate user input at boundaries');
+    expect(imported[0].confidence).toBe(0.95);
+    expect(imported[0].tags).toContain('security');
+    expect(imported[1].key).toBe('rule-2');
+  });
+
+  it('should fail with wrong passphrase', () => {
+    const exportPath = path.join(tmpDir, 'memories-bad.avault');
+    const entries = loadMemories(tmpDir);
+    exportMemoryPortable(entries, exportPath, 'correct-pass');
+
+    expect(() => importMemoryPortable(exportPath, 'wrong-pass')).toThrow();
+  });
+
+  it('should store imported entries into a fresh vault', async () => {
+    const exportPath = path.join(tmpDir, 'memories-transfer.avault');
+    const entries = await exportMemories(tmpDir);
+    exportMemoryPortable(entries, exportPath, 'transfer-pass');
+
+    const imported = importMemoryPortable(exportPath, 'transfer-pass');
+    for (const mem of imported) {
+      await storeMemory(tmpDir2, {
+        key: mem.key,
+        content: mem.content,
+        memoryType: mem.memoryType,
+        tags: mem.tags,
+        confidence: mem.confidence,
+        source: mem.source,
+        queryHash: mem.queryHash,
+      });
+    }
+
+    const stored = await exportMemories(tmpDir2);
+    expect(stored).toHaveLength(2);
+    expect(stored[0].key).toBe('rule-1');
+    expect(stored[1].key).toBe('rule-2');
   });
 });
 

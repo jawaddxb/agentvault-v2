@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories } from '../memory/memory.js';
+import { storeMemory, queryMemories, listMemories, removeMemory, exportMemories, exportFilteredMemories, loadMemories as loadMemoriesSync } from '../memory/memory.js';
 import { searchMemories } from '../memory/search.js';
 import { checkLicense, consumeAccess, loadBankEntries, listPurchasedBanks, loadLicense } from '../license/license.js';
 import type { MemoryType } from '../types/index.js';
@@ -143,19 +143,150 @@ export function memoryCommand(): Command {
     });
 
   cmd.command('export')
-    .description('Export all memories to JSON')
+    .description('Export memories to JSON or encrypted .avault')
     .option('-o, --output <file>', 'Output file path')
+    .option('--tag <tag>', 'Export only entries with this tag')
+    .option('-t, --type <type>', 'Export only entries of this memory type')
+    .option('--encrypt', 'Encrypt output using portable format')
+    .option('--passphrase <passphrase>', 'Passphrase for encrypted export (required with --encrypt)')
     .action(async (opts) => {
-      const entries = await exportMemories(process.cwd());
-      if (!entries.length) { console.log('No memories to export.'); return; }
-      const content = JSON.stringify(entries, null, 2);
-      if (opts.output) {
-        const fs = await import('node:fs');
-        fs.writeFileSync(opts.output, content);
-        console.log(`Exported ${entries.length} memories to ${opts.output}`);
-      } else {
-        console.log(content);
+      if (opts.encrypt && !opts.passphrase) {
+        console.error('Encrypted export requires --passphrase');
+        process.exit(1);
       }
+
+      const hasFilters = opts.tag || opts.type;
+      const entries = hasFilters
+        ? await exportFilteredMemories(process.cwd(), {
+            tag: opts.tag,
+            memoryType: opts.type as MemoryType | undefined,
+          })
+        : await exportMemories(process.cwd());
+
+      if (!entries.length) { console.log('No memories to export.'); return; }
+
+      if (opts.encrypt) {
+        const { exportMemoryPortable } = await import('../portable/portable.js');
+        const outPath = opts.output ?? 'memories.avault';
+        exportMemoryPortable(entries, outPath, opts.passphrase);
+        console.log(`Exported ${entries.length} memories (encrypted) to ${outPath}`);
+      } else {
+        const content = JSON.stringify(entries, null, 2);
+        if (opts.output) {
+          const fs = await import('node:fs');
+          fs.writeFileSync(opts.output, content);
+          console.log(`Exported ${entries.length} memories to ${opts.output}`);
+        } else {
+          console.log(content);
+        }
+      }
+    });
+
+  cmd.command('import <file>')
+    .description('Import memories from JSON or encrypted .avault file')
+    .option('--passphrase <passphrase>', 'Passphrase for encrypted .avault file')
+    .option('--merge', 'Skip entries where key already exists (default: overwrite)')
+    .option('--dry-run', 'Preview without importing')
+    .option('--tag <tag>', 'Import only entries with this tag')
+    .option('-t, --type <type>', 'Import only entries of this memory type')
+    .action(async (file: string, opts) => {
+      const fs = await import('node:fs');
+      const dir = process.cwd();
+
+      if (!fs.existsSync(file)) {
+        console.error(`File not found: ${file}`);
+        process.exit(1);
+      }
+
+      // Auto-detect format
+      const raw = fs.readFileSync(file, 'utf-8');
+      let entries: Array<{
+        key: string; content: string; memoryType: string; tags?: string[];
+        confidence?: number; source?: string; queryHash?: string; expiresAt?: string;
+      }>;
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed.salt && parsed.iv && parsed.tag && parsed.data) {
+          // Encrypted format
+          if (!opts.passphrase) {
+            console.error('Encrypted file detected. Provide --passphrase to decrypt.');
+            process.exit(1);
+          }
+          const { importMemoryPortable } = await import('../portable/portable.js');
+          entries = importMemoryPortable(file, opts.passphrase);
+        } else if (Array.isArray(parsed)) {
+          // Plain JSON array of MemoryEntry
+          entries = parsed;
+        } else {
+          console.error('Unrecognized format. Expected MemoryEntry[] JSON array or encrypted .avault file.');
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`Failed to parse ${file}: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+
+      // Apply filters
+      let filtered = entries;
+      let filteredOut = 0;
+      if (opts.tag) {
+        const before = filtered.length;
+        filtered = filtered.filter(e => e.tags?.includes(opts.tag));
+        filteredOut += before - filtered.length;
+      }
+      if (opts.type) {
+        const before = filtered.length;
+        filtered = filtered.filter(e => e.memoryType === opts.type);
+        filteredOut += before - filtered.length;
+      }
+
+      if (opts.dryRun) {
+        console.log(`[DRY RUN] Would import ${filtered.length} memories from ${file}:`);
+        for (const e of filtered) {
+          const tags = e.tags?.length ? ` [${e.tags.join(', ')}]` : '';
+          console.log(`  ${e.key} (${e.memoryType})${tags}`);
+        }
+        if (filteredOut > 0) console.log(`  (${filteredOut} entries excluded by filters)`);
+        return;
+      }
+
+      // Load existing keys for merge check
+      const existingKeys = opts.merge
+        ? new Set(loadMemoriesSync(dir).map(e => e.key))
+        : new Set<string>();
+
+      let imported = 0;
+      let skipped = 0;
+      for (const mem of filtered) {
+        if (opts.merge && existingKeys.has(mem.key)) {
+          skipped++;
+          continue;
+        }
+
+        // Recompute TTL from expiresAt if present
+        let ttlSeconds: number | undefined;
+        if (mem.expiresAt) {
+          const remaining = Math.round((new Date(mem.expiresAt).getTime() - Date.now()) / 1000);
+          if (remaining > 0) ttlSeconds = remaining;
+        }
+
+        await storeMemory(dir, {
+          key: mem.key,
+          content: mem.content,
+          memoryType: mem.memoryType as MemoryType,
+          tags: mem.tags,
+          confidence: mem.confidence,
+          source: mem.source,
+          queryHash: mem.queryHash,
+          ttlSeconds,
+        });
+        imported++;
+      }
+
+      console.log(`Imported ${imported} memories from ${file}`);
+      if (skipped > 0) console.log(`Skipped ${skipped} existing entries (--merge)`);
+      if (filteredOut > 0) console.log(`Filtered out ${filteredOut} entries`);
     });
 
   return cmd;

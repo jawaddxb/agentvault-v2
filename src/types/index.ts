@@ -130,6 +130,13 @@ export interface PortableVault {
   memories: MemoryEntry[];
 }
 
+/** Memory-only portable format (.avault) */
+export interface MemoryPortable {
+  schema: 'agentvault-memory/1.0';
+  exportedAt: string;
+  memories: MemoryEntry[];
+}
+
 /** MCP server error codes */
 export type McpErrorCode =
   | 'KEY_NOT_FOUND'
