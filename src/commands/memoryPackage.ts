@@ -20,6 +20,10 @@ export function memoryPackageCommand(): Command {
     .option('--since <days>', 'Only include memories from the last N days')
     .option('--dry-run', 'Preview without creating the package')
     .action((opts) => {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(opts.name)) {
+        console.error('Invalid bank name. Use alphanumeric, dashes, underscores. Max 128 chars.');
+        process.exit(1);
+      }
       const dir = process.cwd();
       const entries = loadMemories(dir);
       let filtered = entries.filter(e => e.tags.includes(opts.fromTag));

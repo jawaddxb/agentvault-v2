@@ -82,6 +82,9 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
   // Get bank details
   app.get('/banks/:name', (c) => {
     const bankName = c.req.param('name');
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(bankName)) {
+      return c.json({ error: 'Invalid bank name' }, 400);
+    }
     const banks = listPublishedBanks(projectDir);
     const bank = banks.find(b => b.name === bankName);
     if (!bank) return c.json({ error: 'Bank not found' }, 404);
@@ -89,17 +92,29 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
   });
 
   // Checkout — buyer signs a message to prove identity, we issue a license
-  // In v2.0, payment verification happens off-chain (x402 / USDC transfer check)
   app.post('/banks/:name/checkout', async (c) => {
     const bankName = c.req.param('name');
+
+    // C5 fix: validate bank name (path traversal prevention)
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(bankName)) {
+      return c.json({ error: 'Invalid bank name' }, 400);
+    }
+
     const body = await c.req.json<{
       buyerAddress: string;
       signature: string;
-      passphrase: string;  // buyer's passphrase to re-encrypt the bank
+      timestamp: string;        // C2 fix: client sends timestamp
+      exportPassphrase: string;  // C1 fix: one-time export passphrase, NOT vault master
     }>();
 
-    // Verify the signature proves ownership of buyerAddress
-    const message = `checkout:${bankName}:${Date.now().toString().slice(0, -3)}`; // ~1 second precision
+    // C2 fix: verify signature against client-provided timestamp with 60s window
+    const ts = parseInt(body.timestamp);
+    const age = Math.abs(Date.now() - ts);
+    if (age > 60000) {
+      return c.json({ error: 'Timestamp expired (max 60 seconds)' }, 400);
+    }
+
+    const message = `checkout:${bankName}:${body.timestamp}`;
     try {
       const recovered = verifySignature(message, body.signature);
       if (recovered.toLowerCase() !== body.buyerAddress.toLowerCase()) {
@@ -115,11 +130,13 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
     if (!bank) return c.json({ error: 'Bank not found' }, 404);
 
     // TODO: Verify x402 USDC payment on Base
-    // For now, this is a placeholder for the payment verification step
 
-    // Re-encrypt bank data with buyer's passphrase
-    const bankData = loadPublishedBank(projectDir, bankName);
-    const reEncrypted = encrypt(bankData.toString('utf-8'), body.passphrase);
+    // C4 fix: decrypt bank entries with seller's key, re-encrypt with buyer's export passphrase
+    const { getPassphrase, readEncryptedFile } = await import('../vault/encryption.js');
+    const sellerPassphrase = getPassphrase(projectDir);
+    const bankFilePath = path.join(resolvePaths(projectDir).base, 'packaged-banks', bankName, 'bank.encrypted');
+    const decryptedEntries = readEncryptedFile(bankFilePath, sellerPassphrase, []);
+    const reEncrypted = encrypt(JSON.stringify(decryptedEntries), body.exportPassphrase);
 
     // Generate license
     const now = new Date();
@@ -131,13 +148,12 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
       sellerWallet: getWalletAddress(projectDir),
     };
 
-    // Set limits based on access model
     if (bank.accessModel === 'access_limited' || bank.accessModel === 'time_and_access') {
-      license.maxAccesses = 100; // Default, should come from bank config
+      license.maxAccesses = 100;
       license.remainingAccesses = 100;
     }
     if (bank.accessModel === 'time_locked' || bank.accessModel === 'time_and_access') {
-      license.expiresAt = new Date(now.getTime() + 30 * 86400000).toISOString(); // 30 days default
+      license.expiresAt = new Date(now.getTime() + 30 * 86400000).toISOString();
     }
 
     return c.json({

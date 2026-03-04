@@ -347,6 +347,12 @@ async function handleTool(
         const outputPath = args.outputPath as string;
         const passphrase = args.passphrase as string;
         if (!outputPath || !passphrase) return fail('Missing outputPath or passphrase', 'INVALID_INPUT');
+        // H1 fix: restrict export to within .agentvault/ directory
+        const resolvedOutput = path.resolve(outputPath);
+        const vaultBase = path.resolve(resolvePaths(projectDir).base);
+        if (!resolvedOutput.startsWith(vaultBase)) {
+          return fail('Export path must be within .agentvault/ directory when called via MCP', 'UNAUTHORIZED');
+        }
         exportPortable(projectDir, outputPath, passphrase);
         return ok({ exported: true, path: outputPath });
       }

@@ -67,7 +67,8 @@ export function profileCommand(): Command {
     .description('Clone a profile as a starting point')
     .action((from: string, to: string) => {
       const original = loadProfile(process.cwd(), from);
-      const cloned = { ...original, name: to };
+      const cloned: Profile = JSON.parse(JSON.stringify(original));
+      cloned.name = to;
       saveProfile(process.cwd(), cloned);
       console.log(`Profile "${from}" cloned to "${to}"`);
     });

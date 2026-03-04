@@ -46,11 +46,14 @@ export function checkoutCommand(): Command {
 
         console.log(`Purchasing "${bankName}"...`);
 
-        // Sign checkout message
-        const timestamp = Date.now().toString().slice(0, -3);
+        // Sign checkout message with current timestamp
+        const timestamp = Date.now().toString();
         const message = `checkout:${bankName}:${timestamp}`;
         const signature = await signMessage(dir, message);
-        const passphrase = getPassphrase(dir);
+
+        // Generate a one-time export passphrase (NOT the vault master passphrase)
+        const crypto = await import('node:crypto');
+        const exportPassphrase = crypto.randomBytes(32).toString('hex');
 
         // Send checkout request
         const checkoutRes = await fetch(`${opts.gateway}/banks/${bankName}/checkout`, {
@@ -59,7 +62,8 @@ export function checkoutCommand(): Command {
           body: JSON.stringify({
             buyerAddress,
             signature,
-            passphrase,
+            timestamp,
+            exportPassphrase,
           }),
         });
 
@@ -81,11 +85,16 @@ export function checkoutCommand(): Command {
           process.exit(1);
         }
 
+        // Decrypt with export passphrase, re-encrypt with buyer's vault passphrase
+        const { decrypt, writeEncryptedFile } = await import('../vault/encryption.js');
+        const decryptedEntries = JSON.parse(decrypt(result.bank as any, exportPassphrase));
+
         // Save to purchased-banks directory
         const purchasedDir = path.join(resolvePaths(dir).purchasedBanks, bankName);
         fs.mkdirSync(purchasedDir, { recursive: true, mode: 0o700 });
         fs.writeFileSync(path.join(purchasedDir, 'license.json'), JSON.stringify(result.license, null, 2), { mode: 0o600 });
-        fs.writeFileSync(path.join(purchasedDir, 'bank.encrypted'), JSON.stringify(result.bank, null, 2), { mode: 0o600 });
+        const vaultPassphrase = getPassphrase(dir);
+        writeEncryptedFile(path.join(purchasedDir, 'bank.encrypted'), decryptedEntries, vaultPassphrase);
         fs.writeFileSync(path.join(purchasedDir, 'descriptor.json'), JSON.stringify(bank, null, 2), { mode: 0o600 });
 
         console.log(`Bank "${bankName}" purchased and installed`);
