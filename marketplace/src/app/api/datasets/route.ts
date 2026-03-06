@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { requireUser } from '@/lib/middleware';
+import { requireUser, getUserFromApiKey } from '@/lib/middleware';
 
 interface DatasetRow {
   id: number;
@@ -17,7 +17,7 @@ interface DatasetRow {
   username: string;
 }
 
-/** GET /api/datasets — list datasets with optional search and category filter */
+/** GET /api/datasets — list datasets with optional search, category, and type filter */
 export async function GET(request: NextRequest) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
@@ -25,17 +25,24 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const q = searchParams.get('q');
   const category = searchParams.get('category');
+  const type = searchParams.get('type'); // 'dataset' or 'skill'
 
   const db = getDb();
   let sql = `SELECT d.*, u.username FROM datasets d JOIN users u ON d.user_id = u.id WHERE d.is_public = 1`;
   const params: string[] = [];
+
+  if (type === 'skill') {
+    sql += ` AND d.category = 'skills'`;
+  } else if (type === 'dataset') {
+    sql += ` AND d.category != 'skills'`;
+  }
 
   if (q) {
     sql += ` AND (d.name LIKE ? OR d.description LIKE ? OR d.tags LIKE ?)`;
     const like = `%${q}%`;
     params.push(like, like, like);
   }
-  if (category) {
+  if (category && type !== 'skill') {
     sql += ` AND d.category = ?`;
     params.push(category);
   }
@@ -57,11 +64,10 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ datasets });
 }
 
-/** POST /api/datasets — create a new dataset */
+/** POST /api/datasets — create a new dataset or skill.
+ *  Skills (category=skills) require API key auth.
+ *  Datasets use JWT cookie auth. */
 export async function POST(request: Request) {
-  const user = await requireUser();
-  if (user instanceof NextResponse) return user;
-
   const body = await request.json().catch(() => null);
   if (!body?.name || !body?.category || !body?.content) {
     return NextResponse.json({ error: 'name, category, and content are required' }, { status: 400 });
@@ -72,6 +78,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `category must be one of: ${validCategories.join(', ')}` }, { status: 400 });
   }
 
+  // Skills require API key, datasets require JWT
+  let userId: number;
+  if (body.category === 'skills') {
+    const apiKeyUser = getUserFromApiKey(request);
+    if (!apiKeyUser) {
+      return NextResponse.json({ error: 'API key required to publish skills. Pass Authorization: Bearer av_xxx header.' }, { status: 401 });
+    }
+    userId = apiKeyUser.userId;
+  } else {
+    const user = await requireUser();
+    if (user instanceof NextResponse) return user;
+    userId = user.sub;
+  }
+
   const tags = Array.isArray(body.tags) ? body.tags : [];
   const entryCount = body.content.split('\n').filter((l: string) => l.trim()).length;
 
@@ -79,7 +99,7 @@ export async function POST(request: Request) {
   const result = db.prepare(
     `INSERT INTO datasets (user_id, name, description, category, content, tags, entry_count)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(user.sub, body.name.trim(), body.description?.trim() ?? '', body.category, body.content, JSON.stringify(tags), entryCount);
+  ).run(userId, body.name.trim(), body.description?.trim() ?? '', body.category, body.content, JSON.stringify(tags), entryCount);
 
   return NextResponse.json(
     { id: result.lastInsertRowid, name: body.name.trim() },

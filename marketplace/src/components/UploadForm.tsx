@@ -4,17 +4,21 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload } from 'lucide-react';
 
-const CATEGORIES = [
+const DATASET_CATEGORIES = [
   { value: 'knowledge', label: 'Knowledge' },
-  { value: 'skills', label: 'Skills' },
   { value: 'operational', label: 'Operational' },
   { value: 'query_cache', label: 'Query Cache' },
 ];
 
-export default function UploadForm() {
+interface UploadFormProps {
+  uploadType: 'dataset' | 'skill';
+}
+
+export default function UploadForm({ uploadType }: UploadFormProps) {
+  const isSkill = uploadType === 'skill';
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('knowledge');
+  const [category, setCategory] = useState(isSkill ? 'skills' : 'knowledge');
   const [tags, setTags] = useState('');
   const [content, setContent] = useState('');
   const [error, setError] = useState('');
@@ -64,12 +68,14 @@ export default function UploadForm() {
         <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief description of the dataset" />
       </div>
 
-      <div>
-        <label className="block text-sm mb-1 text-[var(--text-secondary)]">Category</label>
-        <select value={category} onChange={e => setCategory(e.target.value)}>
-          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-      </div>
+      {!isSkill && (
+        <div>
+          <label className="block text-sm mb-1 text-[var(--text-secondary)]">Category</label>
+          <select value={category} onChange={e => setCategory(e.target.value)}>
+            {DATASET_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm mb-1 text-[var(--text-secondary)]">Tags (comma-separated)</label>
@@ -81,7 +87,10 @@ export default function UploadForm() {
         <textarea
           value={content}
           onChange={e => setContent(e.target.value)}
-          placeholder="Paste your dataset content here — knowledge, skills, or memory entries for AI agents..."
+          placeholder={isSkill
+            ? "Paste your skill definition here — agent capabilities, tools, or encrypted memory packages..."
+            : "Paste your dataset content here — knowledge, operational data, or query cache entries..."
+          }
           rows={12}
           required
           className="font-mono text-sm"
@@ -94,7 +103,7 @@ export default function UploadForm() {
         className="flex items-center justify-center gap-2 py-2 bg-[var(--accent)] text-white rounded-lg font-medium hover:bg-[var(--accent-hover)] disabled:opacity-50"
       >
         <Upload className="w-4 h-4" />
-        {loading ? 'Uploading...' : 'Upload Dataset'}
+        {loading ? 'Uploading...' : `Upload ${isSkill ? 'Skill' : 'Dataset'}`}
       </button>
     </form>
   );

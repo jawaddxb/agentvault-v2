@@ -37,8 +37,11 @@ export async function POST(request: Request) {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
 
-  const body = await request.json().catch(() => ({}));
-  const label = body?.label?.trim() || 'default';
+  const body = await request.json().catch(() => null);
+  if (!body?.label?.trim()) {
+    return NextResponse.json({ error: 'Label is required' }, { status: 400 });
+  }
+  const label = body.label.trim();
 
   const { fullKey, prefix, hash } = generateApiKey();
 

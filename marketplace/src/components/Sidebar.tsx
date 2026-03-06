@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Search, Upload, Database, Key, Users } from 'lucide-react';
+import { Search, Upload, Database, Key, Users, BookOpen } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/marketplace', label: 'Browse', icon: Search },
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/marketplace/my-datasets', label: 'My Datasets', icon: Database },
   { href: '/marketplace/api-keys', label: 'API Keys', icon: Key },
   { href: '/marketplace/users', label: 'Users', icon: Users },
+  { href: '/marketplace/docs', label: 'API Docs', icon: BookOpen },
 ];
 
 export default function Sidebar() {

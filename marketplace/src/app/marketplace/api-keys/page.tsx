@@ -33,7 +33,7 @@ export default function ApiKeysPage() {
     const res = await fetch('/api/api-keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: label || 'default' }),
+      body: JSON.stringify({ label }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -82,14 +82,15 @@ export default function ApiKeysPage() {
       <div className="flex items-center gap-3 mb-6">
         <input
           type="text"
-          placeholder="Key label (optional)"
+          placeholder="Key label (required)"
           value={label}
           onChange={e => setLabel(e.target.value)}
           className="max-w-xs"
         />
         <button
           onClick={handleCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-hover)] text-sm"
+          disabled={!label.trim()}
+          className="flex items-center gap-2 px-4 py-2 bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-hover)] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-4 h-4" /> Create Key
         </button>

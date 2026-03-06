@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { getUserFromApiKey } from '@/lib/middleware';
 
 interface DatasetRow {
   id: number;
@@ -13,24 +12,23 @@ interface DatasetRow {
   created_at: string;
 }
 
-/** GET /api/search — public search endpoint authenticated via API key */
+/** GET /api/search — public search endpoint (no auth required) */
 export async function GET(request: NextRequest) {
-  const apiKeyUser = getUserFromApiKey(request);
-  if (!apiKeyUser) {
-    return NextResponse.json(
-      { error: 'Valid API key required. Pass Authorization: Bearer av_xxx header.' },
-      { status: 401 }
-    );
-  }
-
   const { searchParams } = request.nextUrl;
   const q = searchParams.get('q') ?? '';
   const category = searchParams.get('category');
+  const type = searchParams.get('type'); // 'dataset' or 'skill'
 
   const db = getDb();
   let sql = `SELECT d.id, d.name, d.description, d.category, d.tags, d.entry_count, d.created_at, u.username
              FROM datasets d JOIN users u ON d.user_id = u.id WHERE d.is_public = 1`;
   const params: string[] = [];
+
+  if (type === 'skill') {
+    sql += ` AND d.category = 'skills'`;
+  } else if (type === 'dataset') {
+    sql += ` AND d.category != 'skills'`;
+  }
 
   if (q) {
     sql += ` AND (d.name LIKE ? OR d.description LIKE ? OR d.tags LIKE ?)`;
