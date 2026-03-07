@@ -12,7 +12,7 @@ const PORT = parseInt(process.env.PORT ?? '3002', 10);
 
 function createServer() {
   const server = new Server(
-    { name: 'agentvault-marketplace-mcp', version: '0.1.0' },
+    { name: 'detectiv-marketplace-mcp', version: '0.1.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -108,7 +108,7 @@ const app = express();
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'agentvault-marketplace-mcp' });
+  res.json({ status: 'ok', service: 'detectiv-marketplace-mcp' });
 });
 
 app.post('/mcp', async (req, res) => {

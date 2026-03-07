@@ -8,7 +8,7 @@ import {
 const BASE_URL = process.env.MARKETPLACE_URL ?? 'http://localhost:3001';
 
 const server = new Server(
-  { name: 'mock-mcp', version: '0.1.0' },
+  { name: 'detectiv-marketplace-mcp', version: '0.1.0' },
   { capabilities: { tools: {} } }
 );
 

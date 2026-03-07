@@ -29,7 +29,7 @@ export default function Navbar() {
     <nav className="border-b border-[var(--border)] px-6 py-3 flex items-center justify-between">
       <Link href="/marketplace" className="flex items-center gap-2 font-semibold text-lg">
         <Shield className="w-5 h-5 text-[var(--accent)]" />
-        <span>AgentVault Marketplace Mock</span>
+        <span>Detectiv Marketplace Mock</span>
       </Link>
       <div className="flex items-center gap-4">
         {user ? (
