@@ -3,23 +3,16 @@ import { getDb } from '@/lib/db';
 import { requireUser } from '@/lib/middleware';
 import { generateApiKey } from '@/lib/auth';
 
-interface ApiKeyRow {
-  id: number;
-  key_prefix: string;
-  label: string;
-  created_at: string;
-  revoked_at: string | null;
-}
-
 /** GET /api/api-keys — list user's API keys */
 export async function GET() {
   const user = await requireUser();
   if (user instanceof NextResponse) return user;
 
-  const db = getDb();
-  const rows = db.prepare(
-    'SELECT id, key_prefix, label, created_at, revoked_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC'
-  ).all(user.sub) as ApiKeyRow[];
+  const pool = await getDb();
+  const { rows } = await pool.query(
+    'SELECT id, key_prefix, label, created_at, revoked_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC',
+    [user.sub]
+  );
 
   return NextResponse.json({
     keys: rows.map(r => ({
@@ -45,13 +38,14 @@ export async function POST(request: Request) {
 
   const { fullKey, prefix, hash } = generateApiKey();
 
-  const db = getDb();
-  const result = db.prepare(
-    'INSERT INTO api_keys (user_id, key_prefix, key_hash, label) VALUES (?, ?, ?, ?)'
-  ).run(user.sub, prefix, hash, label);
+  const pool = await getDb();
+  const { rows } = await pool.query(
+    'INSERT INTO api_keys (user_id, key_prefix, key_hash, label) VALUES ($1, $2, $3, $4) RETURNING id',
+    [user.sub, prefix, hash, label]
+  );
 
   return NextResponse.json(
-    { id: result.lastInsertRowid, key: fullKey, prefix, label },
+    { id: rows[0].id, key: fullKey, prefix, label },
     { status: 201 }
   );
 }
@@ -66,12 +60,13 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
 
-  const db = getDb();
-  const result = db.prepare(
-    "UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND user_id = ? AND revoked_at IS NULL"
-  ).run(body.id, user.sub);
+  const pool = await getDb();
+  const { rowCount } = await pool.query(
+    "UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
+    [body.id, user.sub]
+  );
 
-  if (result.changes === 0) {
+  if (rowCount === 0) {
     return NextResponse.json({ error: 'Key not found or already revoked' }, { status: 404 });
   }
 

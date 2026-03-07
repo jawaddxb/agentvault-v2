@@ -12,6 +12,7 @@ interface AuthFormProps {
 export default function AuthForm({ mode }: AuthFormProps) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -19,10 +20,16 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
 
     const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-    const body = mode === 'login' ? { email } : { username, email };
+    const body = mode === 'login' ? { email, password } : { username, email, password };
 
     try {
       const res = await fetch(endpoint, {
@@ -68,6 +75,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
             <input type="text" placeholder="Display Name" value={username} onChange={e => setUsername(e.target.value)} required />
           )}
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} minLength={6} required />
           <button
             type="submit"
             disabled={loading}

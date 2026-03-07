@@ -44,3 +44,25 @@ export function generateApiKey(): { fullKey: string; prefix: string; hash: strin
 export function hashApiKey(key: string): string {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
+
+/** Hash a password with a random salt using scrypt */
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, 64, (err, derivedKey) => {
+      if (err) reject(err);
+      resolve(`${salt}:${derivedKey.toString('hex')}`);
+    });
+  });
+}
+
+/** Verify a password against a stored hash */
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  const [salt, hash] = storedHash.split(':');
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, 64, (err, derivedKey) => {
+      if (err) reject(err);
+      resolve(crypto.timingSafeEqual(Uint8Array.from(Buffer.from(hash, 'hex')), Uint8Array.from(derivedKey)));
+    });
+  });
+}

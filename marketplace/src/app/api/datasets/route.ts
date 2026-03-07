@@ -2,21 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { requireUser, getUserFromApiKey } from '@/lib/middleware';
 
-interface DatasetRow {
-  id: number;
-  user_id: number;
-  name: string;
-  description: string;
-  category: string;
-  content: string;
-  tags: string;
-  entry_count: number;
-  is_public: number;
-  created_at: string;
-  updated_at: string;
-  username: string;
-}
-
 /** GET /api/datasets — list datasets with optional search, category, and type filter */
 export async function GET(request: NextRequest) {
   const user = await requireUser();
@@ -27,9 +12,10 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category');
   const type = searchParams.get('type'); // 'dataset' or 'skill'
 
-  const db = getDb();
-  let sql = `SELECT d.*, u.username FROM datasets d JOIN users u ON d.user_id = u.id WHERE d.is_public = 1`;
+  const pool = await getDb();
+  let sql = `SELECT d.*, u.username FROM datasets d JOIN users u ON d.user_id = u.id WHERE d.is_public = TRUE`;
   const params: string[] = [];
+  let paramIdx = 0;
 
   if (type === 'skill') {
     sql += ` AND d.category = 'skills'`;
@@ -38,18 +24,18 @@ export async function GET(request: NextRequest) {
   }
 
   if (q) {
-    sql += ` AND (d.name LIKE ? OR d.description LIKE ? OR d.tags LIKE ?)`;
     const like = `%${q}%`;
+    sql += ` AND (d.name ILIKE $${++paramIdx} OR d.description ILIKE $${++paramIdx} OR d.tags ILIKE $${++paramIdx})`;
     params.push(like, like, like);
   }
   if (category && type !== 'skill') {
-    sql += ` AND d.category = ?`;
+    sql += ` AND d.category = $${++paramIdx}`;
     params.push(category);
   }
 
   sql += ` ORDER BY d.created_at DESC LIMIT 100`;
 
-  const rows = db.prepare(sql).all(...params) as DatasetRow[];
+  const { rows } = await pool.query(sql, params);
   const datasets = rows.map(r => ({
     id: r.id,
     name: r.name,
@@ -79,7 +65,7 @@ export async function POST(request: Request) {
 
   // Accept JWT cookie auth (UI) or API key auth (programmatic/MCP)
   let userId: number;
-  const apiKeyUser = getUserFromApiKey(request);
+  const apiKeyUser = await getUserFromApiKey(request);
   if (apiKeyUser) {
     userId = apiKeyUser.userId;
   } else {
@@ -91,14 +77,15 @@ export async function POST(request: Request) {
   const tags = Array.isArray(body.tags) ? body.tags : [];
   const entryCount = body.content.split('\n').filter((l: string) => l.trim()).length;
 
-  const db = getDb();
-  const result = db.prepare(
+  const pool = await getDb();
+  const { rows } = await pool.query(
     `INSERT INTO datasets (user_id, name, description, category, content, tags, entry_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(userId, body.name.trim(), body.description?.trim() ?? '', body.category, body.content, JSON.stringify(tags), entryCount);
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [userId, body.name.trim(), body.description?.trim() ?? '', body.category, body.content, JSON.stringify(tags), entryCount]
+  );
 
   return NextResponse.json(
-    { id: result.lastInsertRowid, name: body.name.trim() },
+    { id: rows[0].id, name: body.name.trim() },
     { status: 201 }
   );
 }

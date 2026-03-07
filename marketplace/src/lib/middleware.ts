@@ -24,24 +24,25 @@ export async function requireUser(): Promise<JwtPayload | NextResponse> {
 }
 
 /** Resolve user from API key in Authorization header */
-export function getUserFromApiKey(request: Request): { userId: number; keyId: number } | null {
+export async function getUserFromApiKey(request: Request): Promise<{ userId: number; keyId: number } | null> {
   const authHeader = request.headers.get('authorization');
   if (!authHeader?.startsWith('Bearer av_')) return null;
 
   const key = authHeader.slice(7); // Remove "Bearer "
   const keyHash = hashApiKey(key);
 
-  const db = getDb();
-  const row = db.prepare(
-    'SELECT id, user_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL'
-  ).get(keyHash) as { id: number; user_id: number } | undefined;
-
-  if (!row) return null;
-
-  // Log access
-  db.prepare('INSERT INTO access_log (api_key_id, endpoint) VALUES (?, ?)').run(
-    row.id, request.url
+  const pool = await getDb();
+  const { rows } = await pool.query(
+    'SELECT id, user_id FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL',
+    [keyHash]
   );
 
-  return { userId: row.user_id, keyId: row.id };
+  if (rows.length === 0) return null;
+
+  // Log access
+  await pool.query('INSERT INTO access_log (api_key_id, endpoint) VALUES ($1, $2)', [
+    rows[0].id, request.url,
+  ]);
+
+  return { userId: rows[0].user_id, keyId: rows[0].id };
 }
