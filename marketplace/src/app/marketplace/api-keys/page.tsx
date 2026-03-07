@@ -7,6 +7,7 @@ import ApiKeyRow from '@/components/ApiKeyRow';
 interface ApiKey {
   id: number;
   prefix: string;
+  fullKey: string;
   label: string;
   createdAt: string;
   revoked: boolean;
@@ -67,7 +68,7 @@ export default function ApiKeysPage() {
       {/* New key modal */}
       {newKey && (
         <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
-          <p className="text-sm text-[var(--success)] mb-2 font-medium">New API key created! Copy it now — it won&apos;t be shown again.</p>
+          <p className="text-sm text-[var(--success)] mb-2 font-medium">New API key created! You can copy it anytime from the list below.</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-sm font-mono bg-[var(--bg-secondary)] p-2 rounded-lg break-all">{newKey}</code>
             <button onClick={handleCopy} className="p-2 hover:bg-[var(--bg-card)] rounded-lg">

@@ -6,17 +6,18 @@ import { KeyRound, Trash2, Copy, Check } from 'lucide-react';
 interface ApiKeyRowProps {
   id: number;
   prefix: string;
+  fullKey: string;
   label: string;
   createdAt: string;
   revoked: boolean;
   onRevoke: (id: number) => void;
 }
 
-export default function ApiKeyRow({ id, prefix, label, createdAt, revoked, onRevoke }: ApiKeyRowProps) {
+export default function ApiKeyRow({ id, prefix, fullKey, label, createdAt, revoked, onRevoke }: ApiKeyRowProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(prefix);
+    navigator.clipboard.writeText(fullKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -41,7 +42,7 @@ export default function ApiKeyRow({ id, prefix, label, createdAt, revoked, onRev
           <button
             onClick={handleCopy}
             className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 rounded-lg transition-colors"
-            title="Copy key prefix"
+            title="Copy full API key"
           >
             {copied ? <Check className="w-4 h-4 text-[var(--success)]" /> : <Copy className="w-4 h-4" />}
           </button>

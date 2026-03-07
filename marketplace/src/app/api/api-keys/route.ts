@@ -10,7 +10,7 @@ export async function GET() {
 
   const pool = await getDb();
   const { rows } = await pool.query(
-    'SELECT id, key_prefix, label, created_at, revoked_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC',
+    'SELECT id, key_prefix, key_full, label, created_at, revoked_at FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC',
     [user.sub]
   );
 
@@ -18,6 +18,7 @@ export async function GET() {
     keys: rows.map(r => ({
       id: r.id,
       prefix: r.key_prefix,
+      fullKey: r.key_full,
       label: r.label,
       createdAt: r.created_at,
       revoked: !!r.revoked_at,
@@ -40,8 +41,8 @@ export async function POST(request: Request) {
 
   const pool = await getDb();
   const { rows } = await pool.query(
-    'INSERT INTO api_keys (user_id, key_prefix, key_hash, label) VALUES ($1, $2, $3, $4) RETURNING id',
-    [user.sub, prefix, hash, label]
+    'INSERT INTO api_keys (user_id, key_prefix, key_hash, key_full, label) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+    [user.sub, prefix, hash, fullKey, label]
   );
 
   return NextResponse.json(

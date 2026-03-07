@@ -39,6 +39,7 @@ export async function initSchema(): Promise<void> {
       user_id    INTEGER NOT NULL REFERENCES users(id),
       key_prefix TEXT NOT NULL,
       key_hash   TEXT NOT NULL UNIQUE,
+      key_full   TEXT NOT NULL DEFAULT '',
       label      TEXT NOT NULL DEFAULT 'default',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       revoked_at TIMESTAMPTZ
@@ -50,6 +51,14 @@ export async function initSchema(): Promise<void> {
       endpoint   TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  // Migration: add key_full column if missing (for existing databases)
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_full TEXT NOT NULL DEFAULT '';
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
   `);
 }
 
