@@ -44,6 +44,18 @@ function createServer() {
         required: ['name', 'content', 'apiKey'],
       },
     },
+    {
+      name: 'marketplace.acquire_skill',
+      description: 'Acquire a skill from the marketplace. Free skills return content immediately. Paid skills return payment instructions.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          id: { type: 'number', description: 'Skill ID from search results' },
+          apiKey: { type: 'string', description: 'API key (av_xxx format) for authentication' },
+        },
+        required: ['id', 'apiKey'],
+      },
+    },
   ];
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
@@ -93,6 +105,32 @@ function createServer() {
           return { content: [{ type: 'text' as const, text: `Error: ${data.error ?? res.statusText}` }], isError: true };
         }
         return { content: [{ type: 'text' as const, text: `Skill published: id=${data.id}, name="${data.name}"` }] };
+      } catch (e) {
+        return { content: [{ type: 'text' as const, text: `Fetch failed: ${(e as Error).message}` }], isError: true };
+      }
+    }
+
+    if (name === 'marketplace.acquire_skill') {
+      const { id: skillId, apiKey } = args as Record<string, unknown>;
+      if (!skillId || !apiKey) {
+        return { content: [{ type: 'text' as const, text: 'Error: id and apiKey are required' }], isError: true };
+      }
+      try {
+        const res = await fetch(`${MARKETPLACE_URL}/api/datasets/${skillId}/acquire`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+        });
+        const data = await res.json().catch(() => ({ error: res.statusText }));
+        if (res.status === 402) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ paymentRequired: true, ...data }, null, 2) }] };
+        }
+        if (!res.ok) {
+          return { content: [{ type: 'text' as const, text: `Error: ${data.error ?? res.statusText}` }], isError: true };
+        }
+        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
       } catch (e) {
         return { content: [{ type: 'text' as const, text: `Fetch failed: ${(e as Error).message}` }], isError: true };
       }

@@ -52,6 +52,16 @@ export async function initSchema(): Promise<void> {
       endpoint   TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS purchases (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      dataset_id  INTEGER NOT NULL REFERENCES datasets(id),
+      price_usdc  DECIMAL(10,2) NOT NULL DEFAULT 0,
+      tx_hash     TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, dataset_id)
+    );
   `);
 
   // Migration: add key_full column if missing (for existing databases)
