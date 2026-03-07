@@ -1,6 +1,7 @@
 import express from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -146,6 +147,31 @@ app.delete('/mcp', (_req, res) => {
     error: { code: -32000, message: 'Method not allowed.' },
     id: null,
   });
+});
+
+// --- SSE transport (legacy compatibility) ---
+const sseTransports = new Map<string, { transport: SSEServerTransport; server: Server }>();
+
+app.get('/sse', async (req, res) => {
+  const server = createServer();
+  const transport = new SSEServerTransport('/messages', res);
+  sseTransports.set(transport.sessionId, { transport, server });
+  res.on('close', () => {
+    sseTransports.delete(transport.sessionId);
+    transport.close();
+    server.close();
+  });
+  await server.connect(transport);
+});
+
+app.post('/messages', async (req, res) => {
+  const sessionId = req.query.sessionId as string;
+  const entry = sseTransports.get(sessionId);
+  if (!entry) {
+    res.status(400).json({ error: 'Invalid or expired session' });
+    return;
+  }
+  await entry.transport.handlePostMessage(req, res, req.body);
 });
 
 app.listen(PORT, () => {
