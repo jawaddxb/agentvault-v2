@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Shield } from 'lucide-react';
+import { Shield, ArrowLeft } from 'lucide-react';
 
 interface AuthFormProps {
   mode: 'login' | 'register';
@@ -92,6 +92,10 @@ export default function AuthForm({ mode }: AuthFormProps) {
             <>Have an account? <Link href="/auth/login" className="text-[var(--accent)] hover:underline">Sign in</Link></>
           )}
         </p>
+
+        <Link href="/marketplace" className="mt-3 flex items-center justify-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Marketplace
+        </Link>
       </div>
     </div>
   );
