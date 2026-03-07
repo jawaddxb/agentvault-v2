@@ -65,8 +65,7 @@ export async function GET(request: NextRequest) {
 }
 
 /** POST /api/datasets — create a new dataset or skill.
- *  Skills (category=skills) require API key auth.
- *  Datasets use JWT cookie auth. */
+ *  Accepts JWT cookie auth (UI) or API key auth (programmatic/MCP). */
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body?.name || !body?.category || !body?.content) {
@@ -78,13 +77,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `category must be one of: ${validCategories.join(', ')}` }, { status: 400 });
   }
 
-  // Skills require API key, datasets require JWT
+  // Accept JWT cookie auth (UI) or API key auth (programmatic/MCP)
   let userId: number;
-  if (body.category === 'skills') {
-    const apiKeyUser = getUserFromApiKey(request);
-    if (!apiKeyUser) {
-      return NextResponse.json({ error: 'API key required to publish skills. Pass Authorization: Bearer av_xxx header.' }, { status: 401 });
-    }
+  const apiKeyUser = getUserFromApiKey(request);
+  if (apiKeyUser) {
     userId = apiKeyUser.userId;
   } else {
     const user = await requireUser();
